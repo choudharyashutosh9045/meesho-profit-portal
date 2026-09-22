@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Meesho Profit Portal</title>
+<meta name="description" content="Upload your Meesho seller exports and see Sale, Cost, GST, RTO, Returns and Net Profit in one dashboard — runs entirely in your browser." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --base:#111318; --surface:#1A1D24; --surface2:#20242C; --line:#2A2E37; --gold:#F2B705;
+    --teal:#3EC9A7; --alert:#E5484D; --ink:#ECEDEE; --muted:#8B909A;
+    box-sizing:border-box;
+    padding-top: env(safe-area-inset-top,0px);
+    padding-bottom: env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:inherit}
+  html,body{margin:0;background:var(--base);color:var(--ink);font-family:Inter,sans-serif;min-height:100%;-webkit-font-smoothing:antialiased;}
+  h1,h2,.display{font-family:Sora,sans-serif;}
+  .tabular{font-variant-numeric:tabular-nums;}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px;}
+  .card{border:1px solid var(--line);background:var(--surface);border-radius:10px;}
+  .muted{color:var(--muted);}
+  .gold{color:var(--gold);}
+  .teal{color:var(--teal);}
+  .alert{color:var(--alert);}
+  button{font-family:inherit;cursor:pointer;}
+  input,select{font-family:inherit;background:var(--base);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 9px;outline:none;font-size:13px;}
+  input:focus,select:focus{border-color:var(--gold);}
+  .icon{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block;}
+  .btn-owner{padding:6px 12px;border-radius:6px;font-size:13px;border:1px solid var(--line);background:var(--surface2);color:var(--muted);}
+  .btn-owner.active{background:var(--gold);color:#1a1502;border-color:var(--gold);font-weight:600;}
+  .btn-ghost{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:6px;font-size:12.5px;border:1px solid var(--line);background:transparent;color:var(--muted);}
+  .btn-ghost:hover{color:var(--ink);border-color:var(--muted);}
+  .btn-ghost.danger:hover{color:var(--alert);border-color:var(--alert);}
+  .btn-gold{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:13px;border:none;background:var(--gold);color:#1a1502;font-weight:600;}
+  .upload-slot{width:100%;display:flex;flex-direction:column;align-items:center;gap:7px;border:1px dashed var(--line);border-radius:8px;padding:18px 8px;background:transparent;color:var(--ink);}
+  .upload-slot:hover{border-color:var(--gold);background:rgba(242,183,5,0.04);}
+  .grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+  @media(min-width:700px){.grid4{grid-template-columns:repeat(4,1fr);}}
+  .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+  @media(min-width:700px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);}
+  th{color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;}
+  tbody tr:hover{background:rgba(255,255,255,0.02);}
+  .cols2{display:grid;grid-template-columns:1fr;gap:18px;}
+  @media(min-width:900px){.cols2{grid-template-columns:2fr 1fr;}}
+  .chartbox{position:relative;height:230px;}
+  .tabbar{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);}
+  .tabbtn{display:flex;align-items:center;gap:7px;padding:12px 16px;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;background:none;border-top:none;border-left:none;border-right:none;}
+  .tabbtn.active{color:var(--ink);border-bottom-color:var(--gold);font-weight:600;}
+  .tabpanel{display:none;}
+  .tabpanel.active{display:block;}
+  .kpi{padding:16px;display:flex;flex-direction:column;gap:8px;}
+  .hero{border:1px solid var(--line);border-radius:12px;padding:22px 24px;background:linear-gradient(135deg, rgba(242,183,5,0.10), rgba(62,201,167,0.05) 60%, var(--surface));position:relative;overflow:hidden;}
+  .hero-chip{background:var(--surface2);border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:12px;display:flex;align-items:center;gap:6px;}
+  .kpi-top{display:flex;justify-content:space-between;align-items:flex-start;}
+  .kpi-icon{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .badge{font-size:10.5px;padding:2px 7px;border-radius:20px;background:var(--surface2);color:var(--muted);}
+</style>
+</head>
+<body>
+
+<!-- shared icon defs -->
+<svg width="0" height="0" style="position:absolute">
+<defs>
+<symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></symbol>
+<symbol id="ic-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></symbol>
+<symbol id="ic-tag" viewBox="0 0 24 24"><path d="M20 12l-8 8-9-9V4h7z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></symbol>
+<symbol id="ic-return" viewBox="0 0 24 24"><path d="M3 10h11a5 5 0 0 1 0 10H9M3 10l4-4M3 10l4 4"/></symbol>
+<symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.36.4.68.75.86.28.15.6.23.94.23H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.91z"/></symbol>
+<symbol id="ic-rupee" viewBox="0 0 24 24"><path d="M6 4h12M6 9h12M6 4c4 0 8 1 8 5s-4 5-8 5l8 6"/></symbol>
+<symbol id="ic-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></symbol>
+<symbol id="ic-trend" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M17 7h4v4"/></symbol>
+<symbol id="ic-percent" viewBox="0 0 24 24"><path d="M19 5L5 19M6.5 8.5A2 2 0 1 0 6.5 4.5 2 2 0 0 0 6.5 8.5zM17.5 19.5A2 2 0 1 0 17.5 15.5 2 2 0 0 0 17.5 19.5z"/></symbol>
+<symbol id="ic-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+<symbol id="ic-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+<symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+<symbol id="ic-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+<symbol id="ic-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></symbol>
+<symbol id="ic-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
+<symbol id="ic-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></symbol>
+</defs>
+</svg>
+
+<div style="border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:10;">
+  <div class="wrap" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding-top:16px;padding-bottom:0;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:34px;height:34px;border-radius:8px;background:var(--gold);display:flex;align-items:center;justify-content:center;">
+        <svg class="icon" style="stroke:#1a1502;width:18px;height:18px;"><use href="#ic-box"/></svg>
+      </div>
+      <div>
+        <div class="display" style="font-size:17px;font-weight:700;">Meesho Profit Portal</div>
+        <div class="muted" id="dataMeta" style="font-size:11.5px;">No data uploaded yet</div>
+      </div>
+    </div>
+    <div id="ownerBar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:14px;"></div>
+  </div>
+  <div class="wrap">
+    <div class="tabbar" id="tabbar">
+      <button class="tabbtn active" data-tab="dashboard"><svg class="icon"><use href="#ic-grid"/></svg>Dashboard</button>
+      <button class="tabbtn" data-tab="upload"><svg class="icon"><use href="#ic-upload"/></svg>Upload data</button>
+      <button class="tabbtn" data-tab="costs"><svg class="icon"><use href="#ic-tag"/></svg>Cost &amp; owners</button>
+      <button class="tabbtn" data-tab="returns"><svg class="icon"><use href="#ic-return"/></svg>Returns</button>
+      <button class="tabbtn" data-tab="received"><svg class="icon"><use href="#ic-check"/></svg>Received payment</button>
+      <button class="tabbtn" data-tab="pending"><svg class="icon"><use href="#ic-clock"/></svg>Pending payment</button>
+      <button class="tabbtn" data-tab="settings"><svg class="icon"><use href="#ic-gear"/></svg>Settings</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" style="padding-top:20px;padding-bottom:40px;">
+
+  <!-- DASHBOARD -->
+  <div class="tabpanel active" id="panel-dashboard">
+    <div class="card" style="padding:14px 18px;margin-bottom:18px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
+      <div>
+        <div class="muted" style="font-size:11px;margin-bottom:4px;">From</div>
+        <input type="date" id="dateFromInput"/>
+      </div>
+      <div>
+        <div class="muted" style="font-size:11px;margin-bottom:4px;">To</div>
+        <input type="date" id="dateToInput"/>
+      </div>
+      <button class="btn-gold" id="applyFilterBtn">Apply filter</button>
+      <button class="btn-ghost" id="clearFilterBtn">Clear</button>
+    </div>
+    <div id="summaryCard" style="margin-bottom:18px;"></div>
+    <div id="statusRow" class="kpi-grid" style="margin-bottom:18px;"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+      <div class="display" style="font-size:15px;font-weight:600;">Profit &amp; loss</div>
+      <button class="btn-ghost" id="exportBtn"><svg class="icon"><use href="#ic-download"/></svg>Export summary CSV</button>
+    </div>
+    <div class="kpi-grid" id="kpiGrid" style="margin-bottom:18px;"></div>
+    <div class="card" style="padding:18px;margin-bottom:18px;">
+      <div class="chartbox" style="height:250px;"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card" style="padding:18px;margin-bottom:18px;">
+      <div class="cols2" style="gap:20px;">
+        <div class="chartbox"><canvas id="financeChart"></canvas></div>
+        <div class="chartbox"><canvas id="outcomeChart"></canvas></div>
+      </div>
+    </div>
+    <div class="cols2" style="margin-bottom:18px;">
+      <div id="ownerPerfTable"></div>
+      <div id="rateCard"></div>
+    </div>
+    <div id="ownerSplit" style="margin-bottom:18px;"></div>
+    <div class="card" style="padding:18px;">
+      <div style="font-size:13px;font-weight:500;">Meesho payout on record</div>
+      <div class="muted" style="font-size:11.5px;margin:5px 0 8px;">Sum of Final Settlement Amount from the payment file — a cross-check against the profit calc above.</div>
+      <div class="display teal tabular" id="settlementVal" style="font-size:20px;font-weight:700;">₹0</div>
+    </div>
+  </div>
+
+  <!-- UPLOAD -->
+  <div class="tabpanel" id="panel-upload">
+    <div class="card" style="padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:14px;font-weight:600;">Upload your 4 Meesho exports</div>
+        <button class="btn-ghost danger" id="resetBtn"><svg class="icon"><use href="#ic-trash"/></svg>Reset this business's data</button>
+      </div>
+      <div class="grid4" id="uploadGrid"></div>
+      <div class="muted" style="font-size:11.5px;margin-top:12px;">Upload as many times as you like — orders and returns already counted (by Sub Order No) are always skipped, so only new ones get added. Nothing leaves your browser.</div>
+    </div>
+  </div>
+
+  <!-- COSTS -->
+  <div class="tabpanel" id="panel-costs">
+    <div class="card" style="padding:18px;margin-bottom:18px;">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px;">Owners for this business</div>
+      <div class="muted" style="font-size:11.5px;margin-bottom:10px;">Assign each SKU below to one of these two owners to split sale/cost/profit item-wise.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <input id="owner1Name" style="flex:1;min-width:160px;"/>
+        <input id="owner2Name" style="flex:1;min-width:160px;"/>
+      </div>
+    </div>
+    <div class="card" id="costPanel" style="padding:0;"></div>
+  </div>
+
+  <!-- RETURNS -->
+  <div class="tabpanel" id="panel-returns">
+    <div class="card" id="returnsPanel" style="padding:0;"></div>
+  </div>
+
+  <!-- RECEIVED PAYMENT -->
+  <div class="tabpanel" id="panel-received">
+    <div class="card" id="receivedPanel" style="padding:0;"></div>
+  </div>
+
+  <!-- PENDING PAYMENT -->
+  <div class="tabpanel" id="panel-pending">
+    <div class="card" id="pendingPanel" style="padding:0;"></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="tabpanel" id="panel-settings">
+    <div class="card" style="padding:20px;max-width:480px;">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Calculation settings</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
+        <div>
+          <div style="font-size:13px;">GST rate</div>
+          <div class="muted" style="font-size:11.5px;">Extracted from GST-inclusive sale price</div>
+        </div>
+        <div><input type="number" id="gstInput" style="width:64px;text-align:right;" class="tabular"/> %</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
+        <div>
+          <div style="font-size:13px;">Customer return — default loss</div>
+          <div class="muted" style="font-size:11.5px;">Starting ₹ value for each new customer return (editable per order in Returns tab)</div>
+        </div>
+        <div>₹ <input type="number" id="crFlatInput" style="width:64px;text-align:right;" class="tabular"/></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
+        <div>
+          <div style="font-size:13px;">Ads cost</div>
+          <div class="muted" style="font-size:11.5px;">Total ad spend for the period — subtracted once from Net Profit</div>
+        </div>
+        <div>₹ <input type="number" id="adsCostInput" style="width:64px;text-align:right;" class="tabular"/></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div>
+          <div style="font-size:13px;">RTO loss</div>
+          <div class="muted" style="font-size:11.5px;">Configured as no loss — RTOs don't reduce Net Profit</div>
+        </div>
+        <div class="muted tabular" style="font-size:13px;">₹0 fixed</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ---------- storage ----------
+const OWNERS_KEY = "mpp_owners_v3";
+const CURRENT_KEY = "mpp_current_owner_v3";
+const dataKey = (o) => "mpp_data_v3_" + o;
+
+function emptyData(){
+  return {
+    orders: [], returns: [], payments: [],
+    costs: {}, returnCosts: {},
+    subOwners: ["Owner 1", "Owner 2"],
+    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0 }
+  };
+}
+function listOwners(){ try{ return JSON.parse(localStorage.getItem(OWNERS_KEY) || "[]"); }catch(e){ return []; } }
+function saveOwners(list){ try{ localStorage.setItem(OWNERS_KEY, JSON.stringify(list)); }catch(e){} }
+function getCurrentOwner(){ try{ return localStorage.getItem(CURRENT_KEY) || ""; }catch(e){ return ""; } }
+function setCurrentOwner(name){ try{ localStorage.setItem(CURRENT_KEY, name); }catch(e){} }
+function loadOwnerData(owner){
+  try{
+    const raw = localStorage.getItem(dataKey(owner));
+    if(!raw) return emptyData();
+    const parsed = JSON.parse(raw);
+    const base = emptyData();
+    const merged = Object.assign(base, parsed);
+    merged.settings = Object.assign(base.settings, parsed.settings || {});
+    merged.subOwners = parsed.subOwners && parsed.subOwners.length===2 ? parsed.subOwners : base.subOwners;
+    merged.returnCosts = parsed.returnCosts || {};
+    return merged;
+  }catch(e){ return emptyData(); }
+}
+function saveOwnerData(owner, data){ try{ localStorage.setItem(dataKey(owner), JSON.stringify(data)); }catch(e){} }
+
+let owners = listOwners();
+let currentOwner = getCurrentOwner();
+if(!currentOwner || !owners.includes(currentOwner)){
+  if(owners.length){ currentOwner = owners[0]; }
+  else { owners = ["My Store"]; saveOwners(owners); currentOwner = "My Store"; }
+  setCurrentOwner(currentOwner);
+}
+let data = loadOwnerData(currentOwner);
+let financeChartInstance = null, outcomeChartInstance = null, trendChartInstance = null;
+let costFilter = "", returnsFilter = "", receivedFilter = "", pendingFilter = "";
+let dateFrom = "", dateTo = "";
+
+function persist(){ saveOwnerData(currentOwner, data); render(); }
+
+// ---------- helpers ----------
+function stripBom(text){ return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text; }
+function cleanKey(v){ return String(v||"").replace(/[\u200B-\u200D\uFEFF]/g,"").trim(); }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+// ---------- parsers ----------
+async function parseOrdersCsv(file){
+  const text = stripBom(await file.text());
+  const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
+  const out = [];
+  for(const row of parsed.data){
+    const status = cleanKey(row["Reason for Credit Entry"]).toUpperCase();
+    if(!status) continue;
+    const subOrderNo = cleanKey(row["Sub Order No"]);
+    if(!subOrderNo) continue;
+    const qty = parseFloat(row["Quantity"]||"1") || 1;
+    const saleAmount = parseFloat(row["Supplier Discounted Price (Incl GST and Commision)"]||"0") || 0;
+    out.push({ subOrderNo, sku:cleanKey(row["SKU"]), productName:cleanKey(row["Product Name"]), qty, saleAmount, status, orderDate:cleanKey(row["Order Date"]) });
+  }
+  return out;
+}
+async function parseReturnsCsv(file){
+  const text = stripBom(await file.text());
+  const lines = text.split(/\r?\n/);
+  const headerIdx = lines.findIndex(l => l.replace(/"/g,"").trim().startsWith("S No,"));
+  if(headerIdx === -1) throw new Error('Could not find header row (expected "S No") — wrong file?');
+  const body = lines.slice(headerIdx).join("\n");
+  const parsed = Papa.parse(body, { header:true, skipEmptyLines:true });
+  const out = [];
+  for(const row of parsed.data){
+    const suborderNo = cleanKey(row["Suborder Number"]);
+    if(!suborderNo) continue;
+    const typeRaw = cleanKey(row["Type of Return"]);
+    let type = null;
+    if(typeRaw === "Courier Return (RTO)") type = "RTO";
+    else if(typeRaw === "Customer Return") type = "CUSTOMER_RETURN";
+    if(!type) continue;
+    const qty = parseFloat(row["Qty"]||"1") || 1;
+    out.push({ suborderNo, sku:cleanKey(row["SKU"]), productName:cleanKey(row["Product Name"]), qty, type });
+  }
+  return out;
+}
+async function parsePaymentsXlsx(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type:"array" });
+  const sheet = wb.Sheets["Order Payments"];
+  if(!sheet) return [];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
+  const headerIdx = rows.findIndex(r => cleanKey(r[0]) === "Sub Order No");
+  if(headerIdx === -1) return [];
+  const headers = rows[headerIdx].map(h => cleanKey(h));
+  const subOrderIdx = headers.indexOf("Sub Order No");
+  const settlementIdx = headers.indexOf("Final Settlement Amount");
+  const statusIdx = headers.indexOf("Live Order Status");
+  const out = [];
+  for(let i = headerIdx+2; i < rows.length; i++){
+    const row = rows[i];
+    const subOrderNo = cleanKey(row[subOrderIdx]);
+    if(!subOrderNo || !/^\d+_\d+$/.test(subOrderNo)) continue;
+    out.push({ subOrderNo, finalSettlement: parseFloat(String(row[settlementIdx] ?? "0"))||0, liveStatus:cleanKey(row[statusIdx]) });
+  }
+  return out;
+}
+
+// ---------- merge (dedupe) ----------
+function mergeBy(existing, incoming, keyFn){
+  const seen = new Set(existing.map(keyFn));
+  const merged = existing.slice();
+  let added = 0;
+  for(const rec of incoming){
+    const k = keyFn(rec);
+    if(!k || seen.has(k)) continue;
+    seen.add(k); merged.push(rec); added++;
+  }
+  return { merged, added };
+}
+
+// ---------- stats ----------
+function ownerOf(sku){
+  const c = data.costs[sku];
+  return (c && c.ownerTag) || data.subOwners[0];
+}
+function costOf(sku){ const c = data.costs[sku]; return c ? (Number(c.cost)||0) + (Number(c.otherCost)||0) : 0; }
+function crLossFor(rec){
+  const override = data.returnCosts[rec.suborderNo];
+  return override !== undefined ? Number(override) || 0 : (Number(data.settings.customerReturnFlatLoss) || 0);
+}
+
+function computeStats(d, dateFrom, dateTo){
+  // Optional date-range scoping (dateFrom/dateTo are "yyyy-mm-dd" strings,
+  // same format Meesho's Order Date column and <input type=date> both use,
+  // so plain string comparison works).
+  let orders = d.orders;
+  if(dateFrom || dateTo){
+    orders = orders.filter(o => {
+      if(!o.orderDate) return false;
+      if(dateFrom && o.orderDate < dateFrom) return false;
+      if(dateTo && o.orderDate > dateTo) return false;
+      return true;
+    });
+  }
+  const orderSuborderSet = new Set(orders.map(o=>o.subOrderNo));
+  let returns = d.returns;
+  if(dateFrom || dateTo){
+    returns = returns.filter(r => orderSuborderSet.has(r.suborderNo));
+  }
+  let payments = d.payments;
+  if(dateFrom || dateTo){
+    payments = payments.filter(p => orderSuborderSet.has(p.subOrderNo));
+  }
+
+  const crSuborderSet = new Set(returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
+  const saleOrders = orders.filter(o => o.status === "DELIVERED" && !crSuborderSet.has(o.subOrderNo));
+
+  const totalSale = saleOrders.reduce((s,o)=>s+o.saleAmount,0);
+  const productCost = saleOrders.reduce((s,o)=>s+o.qty*costOf(o.sku),0);
+  const adsCost = Number(d.settings.adsCost) || 0;
+  const totalCost = productCost + adsCost;
+  const profit = totalSale - totalCost;
+  const gstPct = d.settings.gstPercent;
+  const gst = totalSale * (gstPct/(100+gstPct));
+  const rtoRecs = returns.filter(r=>r.type==="RTO");
+  const rtoCount = rtoRecs.length;
+  const rtoLoss = 0;
+  const crRecs = returns.filter(r=>r.type==="CUSTOMER_RETURN");
+  const crCount = crRecs.length;
+  const crLoss = crRecs.reduce((s,r)=>s+crLossFor(r),0);
+  const netProfit = profit - gst - rtoLoss - crLoss;
+  const settlement = payments.reduce((s,p)=>s+p.finalSettlement,0);
+  const allSkuRows = orders.concat(returns);
+  const missing = Array.from(new Set(allSkuRows.filter(r=>!(r.sku in d.costs) || (Number(d.costs[r.sku].cost)||0)===0).map(r=>r.sku).filter(Boolean)));
+
+  const paymentSuborderSet = new Set(payments.map(p=>p.subOrderNo));
+  const pendingOrders = saleOrders.filter(o => !paymentSuborderSet.has(o.subOrderNo));
+  const pendingAmount = pendingOrders.reduce((s,o)=>s+o.saleAmount,0);
+
+  // per sub-owner totals + a flat performance-table version of the same
+  const bySubOwner = {};
+  d.subOwners.forEach(o => bySubOwner[o] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 });
+  saleOrders.forEach(o => {
+    const owner = ownerOf(o.sku);
+    if(!bySubOwner[owner]) bySubOwner[owner] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 };
+    bySubOwner[owner].sale += o.saleAmount;
+    bySubOwner[owner].cost += o.qty*costOf(o.sku);
+    bySubOwner[owner].orders += 1;
+    if(paymentSuborderSet.has(o.subOrderNo)) bySubOwner[owner].received += o.saleAmount;
+    else bySubOwner[owner].pending += o.saleAmount;
+  });
+  crRecs.forEach(r => {
+    const owner = ownerOf(r.sku);
+    if(!bySubOwner[owner]) bySubOwner[owner] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 };
+    bySubOwner[owner].crLoss += crLossFor(r);
+    bySubOwner[owner].returns += 1;
+  });
+  Object.keys(bySubOwner).forEach(o => {
+    const s = bySubOwner[o];
+    s.gst = s.sale * (gstPct/(100+gstPct));
+    s.profit = s.sale - s.cost;
+    s.netProfit = s.profit - s.gst - s.crLoss;
+  });
+
+  // status breakdown (based on ALL orders in range, cancelled included)
+  const cancelledCount = orders.filter(o => o.status === "CANCELLED").length;
+  const nonCancelled = orders.filter(o => o.status !== "CANCELLED");
+  const shippedCount = orders.filter(o => o.status === "SHIPPED").length;
+  const readyCount = orders.filter(o => o.status === "READY_TO_SHIP").length;
+  const deliveredAllCount = orders.filter(o => o.status === "DELIVERED").length;
+  const inProgressCount = shippedCount + readyCount;
+  const totalOrdersAll = orders.length;
+  const nonCancelledCount = nonCancelled.length || 1;
+  const deliveryRate = (deliveredAllCount / nonCancelledCount) * 100;
+  const rtoRate = (rtoCount / nonCancelledCount) * 100;
+  const returnRate = (crCount / nonCancelledCount) * 100;
+
+  const dates = d.orders.map(o=>o.orderDate).filter(Boolean).sort();
+  const dateRange = dates.length ? { from: dates[0], to: dates[dates.length-1] } : null;
+
+  // monthly Sales & Orders trend (last 6 months of data available)
+  const byMonth = {};
+  saleOrders.forEach(o => {
+    if(!o.orderDate) return;
+    const month = o.orderDate.slice(0,7); // yyyy-mm
+    if(!byMonth[month]) byMonth[month] = { sales:0, orders:0 };
+    byMonth[month].sales += o.saleAmount;
+    byMonth[month].orders += 1;
+  });
+  const trendMonths = Object.keys(byMonth).sort().slice(-6);
+  const trend = trendMonths.map(m => ({ month:m, sales:byMonth[m].sales, orders:byMonth[m].orders }));
+
+  return {
+    totalSale, totalCost, productCost, adsCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss,
+    netProfit, settlement, orderCount:saleOrders.length, totalOrders:totalOrdersAll, missing, bySubOwner,
+    deliveredCount: deliveredAllCount, inProgressCount, dateRange, saleOrders, pendingOrders, pendingAmount,
+    cancelledCount, shippedCount, deliveryRate, rtoRate, returnRate, trend
+  };
+}
+
+function fmt(n){ return "₹" + Math.round(n).toLocaleString("en-IN"); }
+
+// ---------- tabs ----------
+document.getElementById("tabbar").addEventListener("click", (e) => {
+  const btn = e.target.closest(".tabbtn");
+  if(!btn) return;
+  document.querySelectorAll(".tabbtn").forEach(b=>b.classList.remove("active"));
+  document.querySelectorAll(".tabpanel").forEach(p=>p.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("panel-"+btn.dataset.tab).classList.add("active");
+});
+
+// ---------- rendering ----------
+function renderOwnerBar(){
+  const el = document.getElementById("ownerBar");
+  el.innerHTML = "";
+  owners.forEach(o => {
+    const b = document.createElement("button");
+    b.className = "btn-owner" + (o===currentOwner ? " active" : "");
+    b.textContent = o;
+    b.onclick = () => { currentOwner = o; setCurrentOwner(o); data = loadOwnerData(o); render(); };
+    el.appendChild(b);
+  });
+  const addBtn = document.createElement("button");
+  addBtn.className = "btn-owner";
+  addBtn.style.borderStyle = "dashed";
+  addBtn.textContent = "+ Add business";
+  addBtn.onclick = () => {
+    const name = prompt("Business / seller account name:");
+    if(name && name.trim()){
+      const n = name.trim();
+      if(!owners.includes(n)){ owners.push(n); saveOwners(owners); }
+      currentOwner = n; setCurrentOwner(n); data = loadOwnerData(n); render();
+    }
+  };
+  el.appendChild(addBtn);
+}
+
+const SLOTS = [
+  { key:"orders", label:"Orders export", hint:"Orders_<dates>.csv" },
+  { key:"completed", label:"Completed / Delivered", hint:"completed_delivered...csv" },
+  { key:"intransit", label:"Intransit (RTO)", hint:"intransit...csv" },
+  { key:"payments", label:"Payment file", hint:"...PAYMENT_FILE...xlsx" },
+];
+
+function renderUploadGrid(){
+  const el = document.getElementById("uploadGrid");
+  el.innerHTML = "";
+  SLOTS.forEach(slot => {
+    const wrap = document.createElement("div");
+    const btn = document.createElement("button");
+    btn.className = "upload-slot";
+    btn.innerHTML = `<svg class="icon" style="width:20px;height:20px;color:var(--muted);"><use href="#ic-upload"/></svg><span style="font-size:12.5px;text-align:center;">${slot.label}</span><span class="muted" style="font-size:10px;text-align:center;">${slot.hint}</span>`;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = slot.key === "payments" ? ".xlsx" : ".csv";
+    input.style.display = "none";
+    const msg = document.createElement("div");
+    msg.style.fontSize = "11px";
+    msg.style.marginTop = "5px";
+    btn.onclick = () => input.click();
+    input.onchange = async () => {
+      const file = input.files[0];
+      input.value = "";
+      if(!file) return;
+      msg.className = "muted";
+      msg.textContent = "Reading...";
+      try{
+        let added = 0, total = 0;
+        if(slot.key === "orders"){
+          const recs = await parseOrdersCsv(file);
+          const r = mergeBy(data.orders, recs, x=>x.subOrderNo);
+          data.orders = r.merged; added = r.added; total = recs.length;
+        } else if(slot.key === "completed" || slot.key === "intransit"){
+          const recs = await parseReturnsCsv(file);
+          const r = mergeBy(data.returns, recs, x=>x.suborderNo);
+          data.returns = r.merged; added = r.added; total = recs.length;
+        } else if(slot.key === "payments"){
+          const recs = await parsePaymentsXlsx(file);
+          const r = mergeBy(data.payments, recs, x=>x.subOrderNo);
+          data.payments = r.merged; added = r.added; total = recs.length;
+        }
+        msg.className = "teal";
+        const skipped = total - added;
+        msg.textContent = added + " new rows added" + (skipped ? " (" + skipped + " already counted)" : "");
+        persist();
+      }catch(e){
+        msg.className = "alert";
+        msg.textContent = e.message || "Could not read this file";
+      }
+    };
+    wrap.appendChild(btn); wrap.appendChild(input); wrap.appendChild(msg);
+    el.appendChild(wrap);
+  });
+}
+
+const KPI_DEFS = [
+  { key:"totalSale", label:"Total Sale", icon:"ic-rupee", tone:"ink", bg:"rgba(242,183,5,0.12)", iconColor:"var(--gold)" },
+  { key:"totalCost", label:"Total Cost", icon:"ic-box", tone:"ink", bg:"rgba(139,144,154,0.12)", iconColor:"var(--muted)" },
+  { key:"profit", label:"Profit", icon:"ic-trend", tone:"teal", bg:"rgba(62,201,167,0.12)", iconColor:"var(--teal)" },
+  { key:"gst", label:"GST", icon:"ic-percent", tone:"ink", bg:"rgba(139,144,154,0.12)", iconColor:"var(--muted)" },
+  { key:"rtoLoss", label:"RTO loss", icon:"ic-x", tone:"muted", bg:"rgba(139,144,154,0.12)", iconColor:"var(--muted)" },
+  { key:"crLoss", label:"Customer Return", icon:"ic-return", tone:"alert", bg:"rgba(229,72,77,0.12)", iconColor:"var(--alert)" },
+  { key:"netProfit", label:"Net Profit", icon:"ic-trend", tone:"gold", bg:"rgba(242,183,5,0.12)", iconColor:"var(--gold)" },
+];
+
+function renderSummaryCard(stats){
+  const el = document.getElementById("summaryCard");
+  const dateStr = stats.dateRange ? `${stats.dateRange.from} – ${stats.dateRange.to}` : "No orders yet";
+  const netTone = stats.netProfit >= 0 ? "var(--teal)" : "var(--alert)";
+  el.innerHTML = `
+    <div class="hero">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <div style="width:26px;height:26px;border-radius:6px;background:var(--gold);display:flex;align-items:center;justify-content:center;">
+              <svg class="icon" style="stroke:#1a1502;width:14px;height:14px;"><use href="#ic-box"/></svg>
+            </div>
+            <div class="display" style="font-size:16px;font-weight:700;">${esc(currentOwner)}</div>
+          </div>
+          <div class="muted" style="font-size:12px;">${esc(dateStr)} &nbsp;·&nbsp; ${stats.totalOrders} orders processed</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="muted" style="font-size:11.5px;">Net Profit</div>
+          <div class="display tabular" style="font-size:32px;font-weight:700;color:${netTone};line-height:1.1;">${fmt(stats.netProfit)}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
+        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--gold);"><use href="#ic-rupee"/></svg>Sale <b class="tabular">${fmt(stats.totalSale)}</b></div>
+        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--muted);"><use href="#ic-box"/></svg>Cost <b class="tabular">${fmt(stats.totalCost)}</b></div>
+        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--teal);"><use href="#ic-trend"/></svg>Profit <b class="tabular">${fmt(stats.profit)}</b></div>
+        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--gold);"><use href="#ic-check"/></svg>Received <b class="tabular">${fmt(stats.settlement)}</b></div>
+        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--muted);"><use href="#ic-clock"/></svg>Pending <b class="tabular">${fmt(stats.pendingAmount)}</b></div>
+      </div>
+    </div>`;
+}
+
+function renderKpis(stats){
+  const el = document.getElementById("kpiGrid");
+  const subs = {
+    totalSale: stats.orderCount + " delivered orders",
+    totalCost: "product + other + ads cost",
+    profit: "sale − cost",
+    gst: data.settings.gstPercent + "% of sale",
+    rtoLoss: stats.rtoCount + " orders, no loss",
+    crLoss: stats.crCount + " orders",
+    netProfit: "profit − gst − returns",
+  };
+  el.innerHTML = KPI_DEFS.map(k => {
+    const val = stats[k.key];
+    const toneColor = k.tone==="alert"?"var(--alert)":k.tone==="teal"?"var(--teal)":k.tone==="gold"?"var(--gold)":k.tone==="muted"?"var(--muted)":"var(--ink)";
+    return `<div class="card kpi">
+      <div class="kpi-top">
+        <div class="kpi-icon" style="background:${k.bg};">
+          <svg class="icon" style="color:${k.iconColor};width:16px;height:16px;"><use href="#${k.icon}"/></svg>
+        </div>
+      </div>
+      <div class="muted" style="font-size:11.5px;">${k.label}</div>
+      <div class="display tabular" style="font-size:19px;font-weight:700;color:${toneColor};">${fmt(val)}</div>
+      <div class="muted" style="font-size:10.5px;">${subs[k.key]}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderOwnerSplit(stats){
+  const el = document.getElementById("ownerSplit");
+  const rows = data.subOwners.map(name => {
+    const s = stats.bySubOwner[name] || {sale:0,cost:0,gst:0,crLoss:0,profit:0,netProfit:0};
+    return `<div class="card" style="padding:16px;flex:1;min-width:200px;">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+        <svg class="icon" style="color:var(--muted);"><use href="#ic-users"/></svg>
+        <div style="font-size:13px;font-weight:600;">${esc(name)}</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">Sale</span><span class="tabular">${fmt(s.sale)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">Cost</span><span class="tabular">${fmt(s.cost)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px;"><span class="muted">GST + Return</span><span class="tabular alert">- ${fmt(s.gst + s.crLoss)}</span></div>
+      <div style="border-top:1px solid var(--line);padding-top:8px;display:flex;justify-content:space-between;">
+        <span style="font-size:12.5px;font-weight:500;">Net Profit</span>
+        <span class="tabular gold" style="font-size:16px;font-weight:700;">${fmt(s.netProfit)}</span>
+      </div>
+    </div>`;
+  }).join("");
+  el.innerHTML = `<div style="font-size:14px;font-weight:600;margin-bottom:12px;">Owner-wise totals</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">${rows}</div>`;
+}
+
+function renderReturnsPanel(stats){
+  const el = document.getElementById("returnsPanel");
+  const filtered = stats.crRecs.filter(r =>
+    !returnsFilter || r.sku.toLowerCase().includes(returnsFilter) || r.productName.toLowerCase().includes(returnsFilter)
+  );
+  const header = `
+    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:14px;font-weight:600;">Customer returns <span class="muted" style="font-weight:400;font-size:12px;">(${stats.crRecs.length} orders — edit loss per order)</span></div>
+      <div style="position:relative;">
+        <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
+        <input id="returnsSearch" placeholder="Search SKU or product" value="${esc(returnsFilter)}" style="padding-left:30px;width:220px;"/>
+      </div>
+    </div>`;
+  if(!stats.crRecs.length){
+    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No customer returns uploaded yet — once you do, each one will show up here with an editable loss amount.</div>`;
+    return;
+  }
+  const rows = filtered.map(r => {
+    const val = data.returnCosts[r.suborderNo] !== undefined ? data.returnCosts[r.suborderNo] : data.settings.customerReturnFlatLoss;
+    return `<tr>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(r.suborderNo)}</td>
+      <td>${esc(r.productName)}</td>
+      <td class="muted tabular">${esc(r.sku)}</td>
+      <td style="text-align:right;"><input type="number" data-suborder="${esc(r.suborderNo)}" class="crCostInput tabular" style="width:80px;text-align:right;" value="${val}"/></td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = header + `
+    <div style="border-top:1px solid var(--line);max-height:420px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Suborder</th><th>Product</th><th>SKU</th><th style="text-align:right;">Loss (₹)</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  document.getElementById("returnsSearch").addEventListener("input", (e) => {
+    returnsFilter = e.target.value.toLowerCase();
+    renderReturnsPanel(computeStats(data, dateFrom, dateTo));
+  });
+  el.querySelectorAll(".crCostInput").forEach(inp => {
+    inp.addEventListener("change", (e) => {
+      const suborder = e.target.getAttribute("data-suborder");
+      data.returnCosts[suborder] = parseFloat(e.target.value) || 0;
+      persist();
+    });
+  });
+}
+
+const STATUS_DEFS = [
+  { key:"totalOrders", label:"Total Orders", icon:"ic-grid", bg:"rgba(124,110,255,0.15)", color:"#8f85ff" },
+  { key:"shippedCount", label:"Shipped", icon:"ic-arrow", bg:"rgba(56,150,255,0.15)", color:"#4fa6ff" },
+  { key:"deliveredCount", label:"Delivered", icon:"ic-check", bg:"rgba(62,201,167,0.15)", color:"var(--teal)" },
+  { key:"cancelledCount", label:"Cancelled", icon:"ic-x", bg:"rgba(229,72,77,0.15)", color:"var(--alert)" },
+  { key:"rtoCount", label:"RTO", icon:"ic-refresh", bg:"rgba(255,153,51,0.15)", color:"#ff9933" },
+  { key:"crCount", label:"Returns", icon:"ic-return", bg:"rgba(242,183,5,0.15)", color:"var(--gold)" },
+];
+
+function renderStatusRow(stats){
+  const el = document.getElementById("statusRow");
+  el.innerHTML = STATUS_DEFS.map(s => `
+    <div class="card kpi">
+      <div class="kpi-icon" style="background:${s.bg};">
+        <svg class="icon" style="color:${s.color};width:16px;height:16px;"><use href="#${s.icon}"/></svg>
+      </div>
+      <div class="muted" style="font-size:11.5px;">${s.label}</div>
+      <div class="display tabular" style="font-size:19px;font-weight:700;">${stats[s.key]}</div>
+    </div>`).join("");
+}
+
+function renderRateCard(stats){
+  const el = document.getElementById("rateCard");
+  function bar(label, pct, color){
+    return `<div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px;">
+        <span class="muted">${label}</span><span class="tabular" style="color:${color};font-weight:600;">${pct.toFixed(1)}%</span>
+      </div>
+      <div style="height:6px;border-radius:4px;background:var(--surface2);overflow:hidden;">
+        <div style="height:100%;width:${Math.min(pct,100)}%;background:${color};border-radius:4px;"></div>
+      </div>
+    </div>`;
+  }
+  el.innerHTML = `<div class="card" style="padding:18px;height:100%;">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Performance rates</div>
+    ${bar("Delivery rate", stats.deliveryRate, "var(--teal)")}
+    ${bar("RTO rate", stats.rtoRate, "#ff9933")}
+    ${bar("Return rate", stats.returnRate, "var(--gold)")}
+  </div>`;
+}
+
+function renderOwnerPerfTable(stats){
+  const el = document.getElementById("ownerPerfTable");
+  const rows = data.subOwners.map(name => {
+    const s = stats.bySubOwner[name] || {orders:0,sale:0,gst:0,received:0,pending:0,returns:0};
+    return `<tr>
+      <td><span class="badge" style="background:rgba(242,183,5,0.15);color:var(--gold);">${esc(name)}</span></td>
+      <td class="tabular">${s.orders}</td>
+      <td class="tabular">${fmt(s.sale)}</td>
+      <td class="tabular">${fmt(s.gst)}</td>
+      <td class="tabular teal">${fmt(s.received)}</td>
+      <td class="tabular gold">${fmt(s.pending)}</td>
+      <td class="tabular">${s.returns}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `<div class="card" style="padding:0;height:100%;">
+    <div style="padding:16px 18px;font-size:14px;font-weight:600;">Owner performance</div>
+    <div style="border-top:1px solid var(--line);overflow-x:auto;">
+      <table>
+        <thead><tr><th>Owner</th><th>Orders</th><th>Total Sale</th><th>GST</th><th>Received</th><th>Pending</th><th>Returns</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderReceivedPanel(stats){
+  const el = document.getElementById("receivedPanel");
+  const filtered = data.payments.filter(p =>
+    !receivedFilter || p.subOrderNo.toLowerCase().includes(receivedFilter) || (p.liveStatus||"").toLowerCase().includes(receivedFilter)
+  );
+  const header = `
+    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:14px;font-weight:600;">Received payment <span class="muted" style="font-weight:400;font-size:12px;">(${data.payments.length} settlements)</span></div>
+        <div class="teal tabular" style="font-size:18px;font-weight:700;margin-top:4px;">${fmt(stats.settlement)}</div>
+      </div>
+      <div style="position:relative;">
+        <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
+        <input id="receivedSearch" placeholder="Search Sub Order No or status" value="${esc(receivedFilter)}" style="padding-left:30px;width:230px;"/>
+      </div>
+    </div>`;
+  if(!data.payments.length){
+    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No payment file uploaded yet — upload it in the Upload data tab to see settlements here.</div>`;
+    return;
+  }
+  const rows = filtered.map(p => `<tr>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(p.subOrderNo)}</td>
+      <td>${esc(p.liveStatus || "—")}</td>
+      <td style="text-align:right;" class="teal tabular">${fmt(p.finalSettlement)}</td>
+    </tr>`).join("");
+  el.innerHTML = header + `
+    <div style="border-top:1px solid var(--line);max-height:420px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Sub Order No</th><th>Live status</th><th style="text-align:right;">Amount received</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="3" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  document.getElementById("receivedSearch").addEventListener("input", (e) => {
+    receivedFilter = e.target.value.toLowerCase();
+    renderReceivedPanel(computeStats(data, dateFrom, dateTo));
+  });
+}
+
+function renderPendingPanel(stats){
+  const el = document.getElementById("pendingPanel");
+  const filtered = stats.pendingOrders.filter(o =>
+    !pendingFilter || o.sku.toLowerCase().includes(pendingFilter) || o.productName.toLowerCase().includes(pendingFilter) || o.subOrderNo.toLowerCase().includes(pendingFilter)
+  );
+  const header = `
+    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:14px;font-weight:600;">Pending payment <span class="muted" style="font-weight:400;font-size:12px;">(${stats.pendingOrders.length} delivered orders, no settlement found yet)</span></div>
+        <div class="gold tabular" style="font-size:18px;font-weight:700;margin-top:4px;">${fmt(stats.pendingAmount)}</div>
+      </div>
+      <div style="position:relative;">
+        <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
+        <input id="pendingSearch" placeholder="Search Sub Order No, SKU or product" value="${esc(pendingFilter)}" style="padding-left:30px;width:250px;"/>
+      </div>
+    </div>
+    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Estimated from sale amount — actual Meesho payout may differ slightly after commission. Upload a newer payment file to move these into Received.</div>`;
+  if(!stats.saleOrders.length){
+    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No delivered orders yet.</div>`;
+    return;
+  }
+  const rows = filtered.map(o => `<tr>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(o.subOrderNo)}</td>
+      <td>${esc(o.productName)}</td>
+      <td class="muted tabular">${esc(o.sku)}</td>
+      <td style="text-align:right;" class="gold tabular">${fmt(o.saleAmount)}</td>
+    </tr>`).join("");
+  el.innerHTML = header + `
+    <div style="border-top:1px solid var(--line);max-height:400px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Sub Order No</th><th>Product</th><th>SKU</th><th style="text-align:right;">Sale amount</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">All caught up — nothing pending</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  document.getElementById("pendingSearch").addEventListener("input", (e) => {
+    pendingFilter = e.target.value.toLowerCase();
+    renderPendingPanel(computeStats(data, dateFrom, dateTo));
+  });
+}
+
+function renderCostPanel(stats){
+  const el = document.getElementById("costPanel");
+  const map = new Map();
+  data.orders.concat(data.returns).forEach(r => { if(r.sku && !map.has(r.sku)) map.set(r.sku, r.productName); });
+  let rows = Array.from(map.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
+  if(costFilter) rows = rows.filter(([sku,name]) => sku.toLowerCase().includes(costFilter) || name.toLowerCase().includes(costFilter));
+  const warn = stats.missing.length
+    ? `<div class="alert" style="font-size:11.5px;display:flex;gap:5px;align-items:center;">⚠ ${stats.missing.length} missing cost</div>`
+    : "";
+  const header = `
+    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:14px;font-weight:600;">Product cost prices <span class="muted" style="font-weight:400;font-size:12px;">(${map.size} SKUs)</span></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${warn}
+        <div style="position:relative;">
+          <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
+          <input id="costSearch" placeholder="Search SKU or product" value="${esc(costFilter)}" style="padding-left:30px;width:200px;"/>
+        </div>
+      </div>
+    </div>`;
+  let tableRows = rows.map(([sku, name]) => {
+    const c = data.costs[sku] || {};
+    const cost = c.cost ?? "";
+    const other = c.otherCost ?? "";
+    const owner = c.ownerTag || data.subOwners[0];
+    const opts = data.subOwners.map(o => `<option value="${esc(o)}" ${o===owner?"selected":""}>${esc(o)}</option>`).join("");
+    return `<tr>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(sku)}</td>
+      <td>${esc(name)}</td>
+      <td style="text-align:right;"><input type="number" data-sku="${esc(sku)}" data-name="${esc(name)}" data-field="cost" class="costInput tabular" style="width:80px;text-align:right;" value="${cost}" placeholder="0"/></td>
+      <td style="text-align:right;"><input type="number" data-sku="${esc(sku)}" data-name="${esc(name)}" data-field="otherCost" class="costInput tabular" style="width:80px;text-align:right;" value="${other}" placeholder="0"/></td>
+      <td><select data-sku="${esc(sku)}" data-name="${esc(name)}" class="ownerSelect">${opts}</select></td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = header + `
+    <div style="border-top:1px solid var(--line);max-height:440px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>SKU</th><th>Product</th><th style="text-align:right;">Cost price (₹)</th><th style="text-align:right;">Other cost (₹)</th><th>Owner</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  document.getElementById("costSearch").addEventListener("input", (e) => {
+    costFilter = e.target.value.toLowerCase();
+    renderCostPanel(computeStats(data, dateFrom, dateTo));
+  });
+  el.querySelectorAll(".costInput").forEach(inp => {
+    inp.addEventListener("change", (e) => {
+      const sku = e.target.getAttribute("data-sku");
+      const name = e.target.getAttribute("data-name");
+      const field = e.target.getAttribute("data-field");
+      const val = parseFloat(e.target.value) || 0;
+      const existing = data.costs[sku] || { sku, productName:name, cost:0, otherCost:0, ownerTag:data.subOwners[0] };
+      existing[field] = val;
+      existing.productName = name;
+      data.costs[sku] = existing;
+      persist();
+    });
+  });
+  el.querySelectorAll(".ownerSelect").forEach(sel => {
+    sel.addEventListener("change", (e) => {
+      const sku = e.target.getAttribute("data-sku");
+      const name = e.target.getAttribute("data-name");
+      const existing = data.costs[sku] || { sku, productName:name, cost:0, otherCost:0, ownerTag:data.subOwners[0] };
+      existing.ownerTag = e.target.value;
+      existing.productName = name;
+      data.costs[sku] = existing;
+      persist();
+    });
+  });
+}
+
+function renderCharts(stats){
+  const financeCtx = document.getElementById("financeChart");
+  const outcomeCtx = document.getElementById("outcomeChart");
+  const trendCtx = document.getElementById("trendChart");
+  if(typeof Chart === "undefined"){
+    [financeCtx, outcomeCtx, trendCtx].forEach(c => {
+      const p = c.parentElement;
+      p.innerHTML = '<div class="muted" style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;text-align:center;padding:0 20px;">Charts library failed to load (check your internet connection) — the rest of the dashboard still works.</div>';
+    });
+    return;
+  }
+  if(financeChartInstance) financeChartInstance.destroy();
+  if(outcomeChartInstance) outcomeChartInstance.destroy();
+  if(trendChartInstance) trendChartInstance.destroy();
+  const gridColor = "#2A2E37";
+  const textColor = "#8B909A";
+
+  trendChartInstance = new Chart(trendCtx, {
+    type: "line",
+    data: {
+      labels: stats.trend.map(t=>t.month),
+      datasets: [
+        { label:"Sales", data: stats.trend.map(t=>t.sales), borderColor:"#4fa6ff", backgroundColor:"#4fa6ff", tension:0.35, yAxisID:"y", pointRadius:3 },
+        { label:"Orders", data: stats.trend.map(t=>t.orders), borderColor:"#F2B705", backgroundColor:"#F2B705", tension:0.35, yAxisID:"y1", pointRadius:3 },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: {
+        legend: { position:"top", align:"end", labels:{ color:textColor, font:{size:11}, boxWidth:10 } },
+        title: { display:true, text:"Sales & orders trend", color:"#ECEDEE", font:{ family:"Sora", size:12, weight:"600" }, align:"start" }
+      },
+      scales: {
+        x: { ticks:{ color:textColor, font:{size:10.5} }, grid:{ display:false } },
+        y: { position:"left", ticks:{ color:textColor, font:{size:10} }, grid:{ color:gridColor } },
+        y1: { position:"right", ticks:{ color:textColor, font:{size:10} }, grid:{ display:false } },
+      }
+    }
+  });
+
+  financeChartInstance = new Chart(financeCtx, {
+    type: "bar",
+    data: {
+      labels: ["Sale", "Cost", "Profit", "GST", "Net Profit"],
+      datasets: [{
+        data: [stats.totalSale, stats.totalCost, stats.profit, stats.gst, stats.netProfit],
+        backgroundColor: ["#F2B705", "#8B909A", "#3EC9A7", "#E5484D", "#F2B705"],
+        borderRadius: 5,
+        maxBarThickness: 44,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display:false }, title: { display:true, text:"Financial overview", color:"#ECEDEE", font:{ family:"Sora", size:12, weight:"600" }, padding:{bottom:12} } },
+      scales: {
+        x: { ticks:{ color:textColor, font:{size:10.5} }, grid:{ display:false } },
+        y: { ticks:{ color:textColor, font:{size:10} }, grid:{ color:gridColor } }
+      }
+    }
+  });
+
+  outcomeChartInstance = new Chart(outcomeCtx, {
+    type: "doughnut",
+    data: {
+      labels: ["Delivered", "In progress", "RTO", "Customer Return"],
+      datasets: [{
+        data: [stats.deliveredCount, stats.inProgressCount, stats.rtoCount, stats.crCount],
+        backgroundColor: ["#3EC9A7", "#8B909A", "#E5484D", "#F2B705"],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: "62%",
+      plugins: {
+        legend: { position:"bottom", labels:{ color:textColor, font:{size:10.5}, boxWidth:9, padding:12 } },
+        title: { display:true, text:"Order outcomes", color:"#ECEDEE", font:{ family:"Sora", size:12, weight:"600" }, padding:{bottom:12} }
+      }
+    }
+  });
+}
+
+function exportSummaryCsv(stats){
+  const lines = [
+    ["Metric","Value"],
+    ["Business", currentOwner],
+    ["Date range", stats.dateRange ? stats.dateRange.from + " to " + stats.dateRange.to : "N/A"],
+    ["Total Sale", stats.totalSale.toFixed(2)],
+    ["Total Cost (incl. ads)", stats.totalCost.toFixed(2)],
+    ["Ads Cost", stats.adsCost.toFixed(2)],
+    ["Profit", stats.profit.toFixed(2)],
+    ["GST (" + data.settings.gstPercent + "%)", stats.gst.toFixed(2)],
+    ["RTO count", stats.rtoCount],
+    ["RTO loss", stats.rtoLoss.toFixed(2)],
+    ["Customer Return count", stats.crCount],
+    ["Customer Return loss", stats.crLoss.toFixed(2)],
+    ["Net Profit", stats.netProfit.toFixed(2)],
+    ["Meesho settlement received", stats.settlement.toFixed(2)],
+  ];
+  const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = currentOwner.replace(/\s+/g,"_") + "_summary.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function render(){
+  renderOwnerBar();
+  renderUploadGrid();
+  const stats = computeStats(data, dateFrom, dateTo);
+  const safeCalls = [
+    () => renderSummaryCard(stats),
+    () => renderStatusRow(stats),
+    () => renderKpis(stats),
+    () => renderRateCard(stats),
+    () => renderOwnerPerfTable(stats),
+    () => renderOwnerSplit(stats),
+    () => renderReturnsPanel(stats),
+    () => renderReceivedPanel(stats),
+    () => renderPendingPanel(stats),
+    () => renderCostPanel(stats),
+    () => renderCharts(stats),
+  ];
+  safeCalls.forEach(fn => {
+    try{ fn(); }catch(err){ console.error("Dashboard section failed to render:", err); }
+  });
+  document.getElementById("gstInput").value = data.settings.gstPercent;
+  document.getElementById("crFlatInput").value = data.settings.customerReturnFlatLoss;
+  document.getElementById("adsCostInput").value = data.settings.adsCost;
+  document.getElementById("owner1Name").value = data.subOwners[0];
+  document.getElementById("owner2Name").value = data.subOwners[1];
+  document.getElementById("settlementVal").textContent = fmt(stats.settlement);
+  document.getElementById("dataMeta").textContent = stats.totalOrders
+    ? stats.totalOrders + " orders · " + stats.crCount + " customer returns · " + stats.rtoCount + " RTO" + (stats.dateRange ? " · " + stats.dateRange.from + " – " + stats.dateRange.to : "")
+    : "No data uploaded yet";
+  document.getElementById("exportBtn").onclick = () => exportSummaryCsv(stats);
+}
+
+document.getElementById("gstInput").addEventListener("change", (e) => {
+  data.settings.gstPercent = parseFloat(e.target.value) || 0;
+  persist();
+});
+document.getElementById("crFlatInput").addEventListener("change", (e) => {
+  data.settings.customerReturnFlatLoss = parseFloat(e.target.value) || 0;
+  persist();
+});
+document.getElementById("adsCostInput").addEventListener("change", (e) => {
+  data.settings.adsCost = parseFloat(e.target.value) || 0;
+  persist();
+});
+document.getElementById("owner1Name").addEventListener("change", (e) => {
+  const oldName = data.subOwners[0];
+  const newName = e.target.value.trim() || "Owner 1";
+  Object.values(data.costs).forEach(c => { if(c.ownerTag === oldName) c.ownerTag = newName; });
+  data.subOwners[0] = newName;
+  persist();
+});
+document.getElementById("owner2Name").addEventListener("change", (e) => {
+  const oldName = data.subOwners[1];
+  const newName = e.target.value.trim() || "Owner 2";
+  Object.values(data.costs).forEach(c => { if(c.ownerTag === oldName) c.ownerTag = newName; });
+  data.subOwners[1] = newName;
+  persist();
+});
+document.getElementById("applyFilterBtn").addEventListener("click", () => {
+  dateFrom = document.getElementById("dateFromInput").value || "";
+  dateTo = document.getElementById("dateToInput").value || "";
+  render();
+});
+document.getElementById("clearFilterBtn").addEventListener("click", () => {
+  dateFrom = ""; dateTo = "";
+  document.getElementById("dateFromInput").value = "";
+  document.getElementById("dateToInput").value = "";
+  render();
+});
+document.getElementById("resetBtn").addEventListener("click", () => {
+  if(confirm('Clear all uploaded data for "' + currentOwner + '"? Cost prices and settings will be kept.')){
+    data.orders = []; data.returns = []; data.payments = []; data.returnCosts = {};
+    persist();
+  }
+});
+
+render();
+</script>
+</body>
+</html>
