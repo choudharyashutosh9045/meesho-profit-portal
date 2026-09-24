@@ -305,14 +305,22 @@ function loadOwnerData(owner){
 }
 function saveOwnerData(owner, data){ try{ localStorage.setItem(dataKey(owner), JSON.stringify(data)); }catch(e){} }
 
-// ---------- cloud sync (optional Supabase) ----------
+// ---------- cloud sync (Supabase) ----------
 const SB_URL_KEY = "mpp_supabase_url";
 const SB_KEY_KEY = "mpp_supabase_key";
+const SB_DISABLED_KEY = "mpp_supabase_disabled";
+// Embedded defaults so this dashboard auto-connects for anyone who opens
+// the deployed link — no manual setup needed. A per-browser override
+// (entered in Settings) still takes priority if ever set, and Disconnect
+// lets this one browser opt out of cloud sync entirely.
+const DEFAULT_SUPABASE_URL = "https://nvkwipdfurzhcqpginfy.supabase.co";
+const DEFAULT_SUPABASE_KEY = "sb_publishable_Rg4K-nXqHvteC_y1X2FBEQ_KSsUndo-";
 let sbClient = null;
 
 function initSupabase(){
-  const url = localStorage.getItem(SB_URL_KEY) || "";
-  const key = localStorage.getItem(SB_KEY_KEY) || "";
+  if(localStorage.getItem(SB_DISABLED_KEY) === "1"){ sbClient = null; return; }
+  const url = localStorage.getItem(SB_URL_KEY) || DEFAULT_SUPABASE_URL;
+  const key = localStorage.getItem(SB_KEY_KEY) || DEFAULT_SUPABASE_KEY;
   if(url && key && window.supabase && window.supabase.createClient){
     try{ sbClient = window.supabase.createClient(url, key); }
     catch(e){ sbClient = null; }
@@ -429,6 +437,72 @@ async function parseReturnsCsv(file){
   }
   return out;
 }
+// ---------- bulk cost sheet (download / upload) ----------
+async function readRowsAny(file){
+  const isCsv = file.name.toLowerCase().endsWith(".csv");
+  if(isCsv){
+    const text = stripBom(await file.text());
+    return Papa.parse(text, { header:true, skipEmptyLines:true }).data;
+  }
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type:"array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { defval:"" });
+}
+function findCol(row, aliases){
+  const keys = Object.keys(row);
+  for(const alias of aliases){
+    const match = keys.find(k => cleanKey(k).toLowerCase() === alias);
+    if(match !== undefined && row[match] !== "") return row[match];
+  }
+  for(const alias of aliases){
+    const match = keys.find(k => cleanKey(k).toLowerCase().includes(alias));
+    if(match !== undefined && row[match] !== "") return row[match];
+  }
+  return "";
+}
+function downloadCostSheet(rows){
+  const header = ["SKU","Product","Cost Price","Other Cost","Owner"];
+  const lines = [header];
+  rows.forEach(([sku, name]) => {
+    const c = data.costs[sku] || {};
+    lines.push([sku, name, c.cost ?? "", c.otherCost ?? "", c.ownerTag || data.subOwners[0]]);
+  });
+  const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type:"text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = currentOwner.replace(/\s+/g,"_") + "_cost_sheet.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+async function applyCostSheet(file){
+  const rows = await readRowsAny(file);
+  let updated = 0, skipped = 0;
+  for(const row of rows){
+    const sku = cleanKey(findCol(row, ["sku", "sku id", "sku code"]));
+    if(!sku){ skipped++; continue; }
+    const productName = cleanKey(findCol(row, ["product", "product name", "item name"]));
+    const costRaw = findCol(row, ["cost price", "cost"]);
+    const otherRaw = findCol(row, ["other cost", "additional cost", "ads cost"]);
+    const ownerRaw = cleanKey(findCol(row, ["owner"]));
+
+    const existing = data.costs[sku] || { sku, productName:"", cost:0, otherCost:0, ownerTag:data.subOwners[0] };
+    if(productName) existing.productName = productName;
+    if(costRaw !== "") existing.cost = parseFloat(costRaw) || 0;
+    if(otherRaw !== "") existing.otherCost = parseFloat(otherRaw) || 0;
+    if(ownerRaw){
+      const matchedOwner = data.subOwners.find(o => o.toLowerCase() === ownerRaw.toLowerCase());
+      if(matchedOwner) existing.ownerTag = matchedOwner;
+    }
+    existing.sku = sku;
+    data.costs[sku] = existing;
+    updated++;
+  }
+  return { updated, skipped };
+}
+
 async function parsePaymentsXlsx(file){
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type:"array" });
@@ -972,14 +1046,18 @@ function renderCostPanel(stats){
   const header = `
     <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
       <div style="font-size:14px;font-weight:600;">Product cost prices <span class="muted" style="font-weight:400;font-size:12px;">(${map.size} SKUs)</span></div>
-      <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         ${warn}
+        <button class="btn-ghost" id="downloadCostSheetBtn"><svg class="icon"><use href="#ic-download"/></svg>Download sheet</button>
+        <button class="btn-ghost" id="uploadCostSheetBtn"><svg class="icon"><use href="#ic-upload"/></svg>Bulk update from Excel</button>
+        <input type="file" id="costSheetFile" accept=".csv,.xlsx,.xls" style="display:none;"/>
         <div style="position:relative;">
           <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
           <input id="costSearch" placeholder="Search SKU or product" value="${esc(costFilter)}" style="padding-left:30px;width:200px;"/>
         </div>
       </div>
-    </div>`;
+    </div>
+    <div id="costSheetMsg" class="muted" style="padding:0 18px 10px;font-size:11.5px;"></div>`;
   let tableRows = rows.map(([sku, name]) => {
     const c = data.costs[sku] || {};
     const cost = c.cost ?? "";
@@ -1004,6 +1082,24 @@ function renderCostPanel(stats){
   document.getElementById("costSearch").addEventListener("input", (e) => {
     costFilter = e.target.value.toLowerCase();
     renderCostPanel(computeStats(data, dateFrom, dateTo));
+  });
+  document.getElementById("downloadCostSheetBtn").addEventListener("click", () => downloadCostSheet(rows));
+  document.getElementById("uploadCostSheetBtn").addEventListener("click", () => document.getElementById("costSheetFile").click());
+  document.getElementById("costSheetFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+    const msg = document.getElementById("costSheetMsg");
+    msg.textContent = "Reading...";
+    try{
+      const { updated, skipped } = await applyCostSheet(file);
+      msg.className = "teal";
+      msg.textContent = `Updated ${updated} SKU${updated===1?"":"s"}` + (skipped ? `, ${skipped} row${skipped===1?"":"s"} skipped (no matching SKU column / unknown owner)` : "");
+      persist();
+    }catch(err){
+      msg.className = "alert";
+      msg.textContent = err.message || "Could not read this file";
+    }
   });
   el.querySelectorAll(".costInput").forEach(inp => {
     inp.addEventListener("change", (e) => {
@@ -1219,6 +1315,7 @@ document.getElementById("saveSupabaseBtn").addEventListener("click", () => {
   const url = document.getElementById("supabaseUrlInput").value.trim();
   const key = document.getElementById("supabaseKeyInput").value.trim();
   if(!url || !key){ alert("Please paste both the Project URL and the anon key."); return; }
+  localStorage.removeItem(SB_DISABLED_KEY);
   localStorage.setItem(SB_URL_KEY, url);
   localStorage.setItem(SB_KEY_KEY, key);
   initSupabase();
@@ -1228,21 +1325,23 @@ document.getElementById("saveSupabaseBtn").addEventListener("click", () => {
   pushToCloud(currentOwner, data); // also push whatever's local so the first sync isn't empty
 });
 document.getElementById("disconnectSupabaseBtn").addEventListener("click", () => {
+  localStorage.setItem(SB_DISABLED_KEY, "1");
   localStorage.removeItem(SB_URL_KEY);
   localStorage.removeItem(SB_KEY_KEY);
   document.getElementById("supabaseUrlInput").value = "";
   document.getElementById("supabaseKeyInput").value = "";
   sbClient = null;
-  setSyncStatus("Local only");
+  setSyncStatus("Local only (cloud sync off on this browser)");
 });
 document.getElementById("copySqlBtn").addEventListener("click", () => {
   const text = document.getElementById("supabaseSql").textContent;
   if(navigator.clipboard) navigator.clipboard.writeText(text);
 });
 
-document.getElementById("supabaseUrlInput").value = localStorage.getItem(SB_URL_KEY) || "";
-document.getElementById("supabaseKeyInput").value = localStorage.getItem(SB_KEY_KEY) || "";
+document.getElementById("supabaseUrlInput").value = localStorage.getItem(SB_URL_KEY) || (localStorage.getItem(SB_DISABLED_KEY)==="1" ? "" : DEFAULT_SUPABASE_URL);
+document.getElementById("supabaseKeyInput").value = localStorage.getItem(SB_KEY_KEY) || (localStorage.getItem(SB_DISABLED_KEY)==="1" ? "" : DEFAULT_SUPABASE_KEY);
 initSupabase();
+setSyncStatus(sbClient ? "Connected — synced across devices" : "Local only (cloud sync off on this browser)");
 render();
 if(sbClient) refreshFromCloud(currentOwner);
 else setSyncStatus("Local only");
