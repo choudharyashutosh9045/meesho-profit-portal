@@ -413,6 +413,7 @@ async function fetchOwnersFromCloud(){
   }
 }
 
+let owners = listOwners();
 let currentOwner = getCurrentOwner();
 if(!currentOwner || !owners.includes(currentOwner)){
   if(owners.length){ currentOwner = owners[0]; }
