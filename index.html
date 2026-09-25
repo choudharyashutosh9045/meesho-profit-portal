@@ -381,7 +381,38 @@ async function refreshFromCloud(owner){
   }
 }
 
-let owners = listOwners();
+// Fetch the real list of businesses that exist in Supabase (every row in
+// business_data is one business) — without this, a browser that has never
+// used this dashboard before only knows about a locally-invented default
+// name ("My Store"), which is why someone opening a shared link saw all
+// zeros: they were looking at their own empty "My Store", not the sender's
+// actual business.
+async function fetchOwnersFromCloud(){
+  if(!sbClient) return;
+  try{
+    const { data: rows, error } = await sbClient.from("business_data").select("business");
+    if(error) throw error;
+    if(!rows || !rows.length){
+      // Nothing in the cloud table yet — this is the very first sync since
+      // credentials were embedded, so push this browser's existing local
+      // data up as the seed (safe: nothing to overwrite).
+      pushToCloud(currentOwner, data);
+      return;
+    }
+    const cloudOwners = Array.from(new Set(rows.map(r => r.business).filter(Boolean)));
+    if(!cloudOwners.length) return;
+    owners = cloudOwners;
+    saveOwners(owners);
+    if(!owners.includes(currentOwner)) currentOwner = owners[0];
+    setCurrentOwner(currentOwner);
+    data = loadOwnerData(currentOwner);
+    render();
+    refreshFromCloud(currentOwner);
+  }catch(e){
+    console.error("Could not fetch business list from cloud:", e);
+  }
+}
+
 let currentOwner = getCurrentOwner();
 if(!currentOwner || !owners.includes(currentOwner)){
   if(owners.length){ currentOwner = owners[0]; }
@@ -1343,7 +1374,7 @@ document.getElementById("supabaseKeyInput").value = localStorage.getItem(SB_KEY_
 initSupabase();
 setSyncStatus(sbClient ? "Connected — synced across devices" : "Local only (cloud sync off on this browser)");
 render();
-if(sbClient) refreshFromCloud(currentOwner);
+if(sbClient) fetchOwnersFromCloud();
 else setSyncStatus("Local only");
 </script>
 </body>
