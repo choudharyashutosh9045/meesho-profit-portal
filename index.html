@@ -63,9 +63,19 @@
   .cols2{display:grid;grid-template-columns:1fr;gap:18px;}
   @media(min-width:900px){.cols2{grid-template-columns:2fr 1fr;}}
   .chartbox{position:relative;height:230px;}
-  .tabbar{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);}
+  .layout{display:flex;flex-direction:column;gap:0;align-items:flex-start;}
+  @media(min-width:860px){.layout{flex-direction:row;gap:28px;}}
+  .panels{min-width:0;flex:1;}
+  .sidebar{display:flex;flex-direction:row;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:18px;width:100%;}
+  @media(min-width:860px){
+    .sidebar{flex-direction:column;width:196px;flex-shrink:0;border-bottom:none;border-right:1px solid var(--line);position:sticky;top:88px;gap:2px;margin-bottom:0;padding-right:14px;}
+  }
   .tabbtn{display:flex;align-items:center;gap:7px;padding:12px 16px;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;background:none;border-top:none;border-left:none;border-right:none;}
   .tabbtn.active{color:var(--ink);border-bottom-color:var(--gold);font-weight:600;}
+  @media(min-width:860px){
+    .tabbtn{border-bottom:none;border-left:3px solid transparent;justify-content:flex-start;width:100%;padding:10px 12px;border-radius:0 4px 4px 0;}
+    .tabbtn.active{border-left-color:var(--gold);border-bottom-color:transparent;background:rgba(168,121,46,0.08);}
+  }
   .app-header .tabbtn{color:rgba(242,233,211,0.6);}
   .app-header .tabbtn.active{color:var(--paper-ink);border-bottom-color:var(--gold);}
   .app-header .muted{color:rgba(242,233,211,0.55);}
@@ -128,20 +138,21 @@
     </div>
     <div id="ownerBar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:14px;"></div>
   </div>
-  <div class="wrap">
-    <div class="tabbar" id="tabbar">
-      <button class="tabbtn active" data-tab="dashboard"><svg class="icon"><use href="#ic-grid"/></svg>Dashboard</button>
-      <button class="tabbtn" data-tab="upload"><svg class="icon"><use href="#ic-upload"/></svg>Upload data</button>
-      <button class="tabbtn" data-tab="costs"><svg class="icon"><use href="#ic-tag"/></svg>Cost &amp; owners</button>
-      <button class="tabbtn" data-tab="returns"><svg class="icon"><use href="#ic-return"/></svg>Returns</button>
-      <button class="tabbtn" data-tab="received"><svg class="icon"><use href="#ic-check"/></svg>Received payment</button>
-      <button class="tabbtn" data-tab="pending"><svg class="icon"><use href="#ic-clock"/></svg>Pending payment</button>
-      <button class="tabbtn" data-tab="settings"><svg class="icon"><use href="#ic-gear"/></svg>Settings</button>
-    </div>
-  </div>
 </div>
 
-<div class="wrap" style="padding-top:20px;padding-bottom:40px;">
+<div class="wrap layout" style="padding-top:20px;padding-bottom:40px;">
+
+  <div class="sidebar" id="tabbar">
+    <button class="tabbtn active" data-tab="dashboard"><svg class="icon"><use href="#ic-grid"/></svg>Dashboard</button>
+    <button class="tabbtn" data-tab="upload"><svg class="icon"><use href="#ic-upload"/></svg>Upload data</button>
+    <button class="tabbtn" data-tab="costs"><svg class="icon"><use href="#ic-tag"/></svg>Cost &amp; owners</button>
+    <button class="tabbtn" data-tab="returns"><svg class="icon"><use href="#ic-return"/></svg>Returns</button>
+    <button class="tabbtn" data-tab="received"><svg class="icon"><use href="#ic-check"/></svg>Received payment</button>
+    <button class="tabbtn" data-tab="pending"><svg class="icon"><use href="#ic-clock"/></svg>Pending payment</button>
+    <button class="tabbtn" data-tab="settings"><svg class="icon"><use href="#ic-gear"/></svg>Settings</button>
+  </div>
+
+  <div class="panels">
 
   <!-- DASHBOARD -->
   <div class="tabpanel active" id="panel-dashboard">
@@ -293,6 +304,7 @@ create policy "anon can read/write business_data"
     </div>
   </div>
 
+  </div>
 </div>
 
 <script>
@@ -888,7 +900,8 @@ function renderOwnerSplit(stats){
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">Sale</span><span class="tabular">${fmt(s.sale)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">Cost</span><span class="tabular">${fmt(s.cost)}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px;"><span class="muted">GST + Return</span><span class="tabular alert">- ${fmt(s.gst + s.crLoss)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">GST</span><span class="tabular alert">- ${fmt(s.gst)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px;"><span class="muted">Customer Return</span><span class="tabular alert">- ${fmt(s.crLoss)}</span></div>
       <div style="border-top:1px solid var(--line);padding-top:8px;display:flex;justify-content:space-between;">
         <span style="font-size:12.5px;font-weight:500;">Net Profit</span>
         <span class="tabular gold" style="font-size:16px;font-weight:700;">${fmt(s.netProfit)}</span>
