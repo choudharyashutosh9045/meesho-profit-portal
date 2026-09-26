@@ -5,64 +5,87 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Meesho Profit Portal</title>
 <meta name="description" content="Upload your Meesho seller exports and see Sale, Cost, GST, RTO, Returns and Net Profit in one dashboard — runs entirely in your browser." />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧾</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root{
-    --base:#111318; --surface:#1A1D24; --surface2:#20242C; --line:#2A2E37; --gold:#F2B705;
-    --teal:#3EC9A7; --alert:#E5484D; --ink:#ECEDEE; --muted:#8B909A;
+    --base:#F2E9D3; --surface:#FBF6E9; --surface2:#EBDFC1; --line:#CBB98C; --gold:#A8792E;
+    --teal:#2E6A4E; --alert:#A23A34; --ink:#2A2013; --muted:#7C6C4E; --spine:#221810;
+    --paper-ink:#F2E9D3;
     box-sizing:border-box;
     padding-top: env(safe-area-inset-top,0px);
     padding-bottom: env(safe-area-inset-bottom,0px);
   }
   *{box-sizing:inherit}
-  html,body{margin:0;background:var(--base);color:var(--ink);font-family:Inter,sans-serif;min-height:100%;-webkit-font-smoothing:antialiased;}
-  h1,h2,.display{font-family:Sora,sans-serif;}
-  .tabular{font-variant-numeric:tabular-nums;}
+  html,body{margin:0;min-height:100%;-webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      repeating-linear-gradient(to bottom, transparent 0 27px, rgba(203,185,140,0.45) 27px 28px),
+      var(--base);
+    color:var(--ink);
+    font-family:"IBM Plex Sans",sans-serif;
+  }
+  h1,h2,.display{font-family:"Fraunces",serif;font-weight:600;letter-spacing:-0.01em;}
+  .tabular{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;}
   .wrap{max-width:1180px;margin:0 auto;padding:0 20px;}
-  .card{border:1px solid var(--line);background:var(--surface);border-radius:10px;}
+  .card{border:1px solid var(--line);border-left:3px solid var(--gold);background:var(--surface);border-radius:4px;box-shadow:0 1px 0 rgba(255,255,255,0.5) inset;}
   .muted{color:var(--muted);}
   .gold{color:var(--gold);}
   .teal{color:var(--teal);}
   .alert{color:var(--alert);}
   button{font-family:inherit;cursor:pointer;}
-  input,select{font-family:inherit;background:var(--base);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 9px;outline:none;font-size:13px;}
+  input,select{font-family:"IBM Plex Mono",monospace;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:6px 9px;outline:none;font-size:13px;}
   input:focus,select:focus{border-color:var(--gold);}
   .icon{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block;}
-  .btn-owner{padding:6px 12px;border-radius:6px;font-size:13px;border:1px solid var(--line);background:var(--surface2);color:var(--muted);}
-  .btn-owner.active{background:var(--gold);color:#1a1502;border-color:var(--gold);font-weight:600;}
-  .btn-ghost{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:6px;font-size:12.5px;border:1px solid var(--line);background:transparent;color:var(--muted);}
+  .btn-owner{padding:6px 12px;border-radius:3px;font-size:13px;border:1px solid var(--line);background:var(--surface2);color:var(--muted);font-family:"IBM Plex Sans",sans-serif;}
+  .btn-owner.active{background:var(--gold);color:var(--paper-ink);border-color:var(--gold);font-weight:600;}
+  .app-header .btn-owner{background:rgba(242,233,211,0.08);color:rgba(242,233,211,0.75);border-color:rgba(242,233,211,0.25);}
+  .app-header .btn-owner.active{background:var(--gold);color:var(--spine);border-color:var(--gold);}
+  .btn-ghost{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:3px;font-size:12.5px;border:1px solid var(--line);background:transparent;color:var(--muted);}
   .btn-ghost:hover{color:var(--ink);border-color:var(--muted);}
   .btn-ghost.danger:hover{color:var(--alert);border-color:var(--alert);}
-  .btn-gold{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:13px;border:none;background:var(--gold);color:#1a1502;font-weight:600;}
-  .upload-slot{width:100%;display:flex;flex-direction:column;align-items:center;gap:7px;border:1px dashed var(--line);border-radius:8px;padding:18px 8px;background:transparent;color:var(--ink);}
-  .upload-slot:hover{border-color:var(--gold);background:rgba(242,183,5,0.04);}
+  .btn-gold{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:3px;font-size:13px;border:none;background:var(--gold);color:var(--paper-ink);font-weight:600;box-shadow:0 1px 0 rgba(0,0,0,0.15);}
+  .upload-slot{width:100%;display:flex;flex-direction:column;align-items:center;gap:7px;border:1px dashed var(--line);border-radius:4px;padding:18px 8px;background:transparent;color:var(--ink);}
+  .upload-slot:hover{border-color:var(--gold);background:rgba(168,121,46,0.06);}
   .grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
   @media(min-width:700px){.grid4{grid-template-columns:repeat(4,1fr);}}
   .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
   @media(min-width:700px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);}
-  th{color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;}
-  tbody tr:hover{background:rgba(255,255,255,0.02);}
+  th{color:var(--muted);font-weight:600;font-size:12px;}
+  tbody tr:hover{background:rgba(168,121,46,0.05);}
   .cols2{display:grid;grid-template-columns:1fr;gap:18px;}
   @media(min-width:900px){.cols2{grid-template-columns:2fr 1fr;}}
   .chartbox{position:relative;height:230px;}
   .tabbar{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);}
   .tabbtn{display:flex;align-items:center;gap:7px;padding:12px 16px;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;background:none;border-top:none;border-left:none;border-right:none;}
   .tabbtn.active{color:var(--ink);border-bottom-color:var(--gold);font-weight:600;}
+  .app-header .tabbtn{color:rgba(242,233,211,0.6);}
+  .app-header .tabbtn.active{color:var(--paper-ink);border-bottom-color:var(--gold);}
+  .app-header .muted{color:rgba(242,233,211,0.55);}
+  .app-header .display{color:var(--paper-ink);}
+  .app-header{background:var(--spine);border-bottom:3px solid var(--gold);}
   .tabpanel{display:none;}
   .tabpanel.active{display:block;}
   .kpi{padding:16px;display:flex;flex-direction:column;gap:8px;}
-  .hero{border:1px solid var(--line);border-radius:12px;padding:22px 24px;background:linear-gradient(135deg, rgba(242,183,5,0.10), rgba(62,201,167,0.05) 60%, var(--surface));position:relative;overflow:hidden;}
+  .hero{border:1px solid var(--line);border-radius:6px;padding:22px 24px;background:linear-gradient(160deg, rgba(168,121,46,0.10), rgba(46,106,78,0.05) 65%, var(--surface));position:relative;overflow:hidden;}
+  .hero::after{
+    content:"Balanced books"; position:absolute; top:16px; right:20px; width:88px;height:88px;
+    border-radius:50%; border:2px dashed var(--teal); color:var(--teal); opacity:.55;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    font-family:"Fraunces",serif; font-size:11px; font-weight:600; line-height:1.15;
+    transform:rotate(-11deg); padding:10px; pointer-events:none;
+  }
+  @media(max-width:700px){.hero::after{display:none;}}
   .hero-chip{background:var(--surface2);border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:12px;display:flex;align-items:center;gap:6px;}
   .kpi-top{display:flex;justify-content:space-between;align-items:flex-start;}
-  .kpi-icon{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .kpi-icon{width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .badge{font-size:10.5px;padding:2px 7px;border-radius:20px;background:var(--surface2);color:var(--muted);}
 </style>
 </head>
@@ -92,7 +115,7 @@
 </defs>
 </svg>
 
-<div style="border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:10;">
+<div class="app-header" style="position:sticky;top:0;z-index:10;">
   <div class="wrap" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding-top:16px;padding-bottom:0;">
     <div style="display:flex;align-items:center;gap:10px;">
       <div style="width:34px;height:34px;border-radius:8px;background:var(--gold);display:flex;align-items:center;justify-content:center;">
@@ -787,13 +810,13 @@ function renderUploadGrid(){
 }
 
 const KPI_DEFS = [
-  { key:"totalSale", label:"Total Sale", icon:"ic-rupee", tone:"ink", bg:"rgba(242,183,5,0.12)", iconColor:"var(--gold)" },
-  { key:"totalCost", label:"Total Cost", icon:"ic-box", tone:"ink", bg:"rgba(139,144,154,0.12)", iconColor:"var(--muted)" },
-  { key:"profit", label:"Profit", icon:"ic-trend", tone:"teal", bg:"rgba(62,201,167,0.12)", iconColor:"var(--teal)" },
-  { key:"gst", label:"GST", icon:"ic-percent", tone:"ink", bg:"rgba(139,144,154,0.12)", iconColor:"var(--muted)" },
-  { key:"rtoLoss", label:"RTO loss", icon:"ic-x", tone:"muted", bg:"rgba(139,144,154,0.12)", iconColor:"var(--muted)" },
-  { key:"crLoss", label:"Customer Return", icon:"ic-return", tone:"alert", bg:"rgba(229,72,77,0.12)", iconColor:"var(--alert)" },
-  { key:"netProfit", label:"Net Profit", icon:"ic-trend", tone:"gold", bg:"rgba(242,183,5,0.12)", iconColor:"var(--gold)" },
+  { key:"totalSale", label:"Total Sale", icon:"ic-rupee", tone:"ink", bg:"rgba(168,121,46,0.14)", iconColor:"var(--gold)" },
+  { key:"totalCost", label:"Total Cost", icon:"ic-box", tone:"ink", bg:"rgba(124,108,78,0.14)", iconColor:"var(--muted)" },
+  { key:"profit", label:"Profit", icon:"ic-trend", tone:"teal", bg:"rgba(46,106,78,0.14)", iconColor:"var(--teal)" },
+  { key:"gst", label:"GST", icon:"ic-percent", tone:"ink", bg:"rgba(124,108,78,0.14)", iconColor:"var(--muted)" },
+  { key:"rtoLoss", label:"RTO loss", icon:"ic-x", tone:"muted", bg:"rgba(124,108,78,0.14)", iconColor:"var(--muted)" },
+  { key:"crLoss", label:"Customer Return", icon:"ic-return", tone:"alert", bg:"rgba(162,58,52,0.14)", iconColor:"var(--alert)" },
+  { key:"netProfit", label:"Net Profit", icon:"ic-trend", tone:"gold", bg:"rgba(168,121,46,0.14)", iconColor:"var(--gold)" },
 ];
 
 function renderSummaryCard(stats){
@@ -810,7 +833,7 @@ function renderSummaryCard(stats){
             </div>
             <div class="display" style="font-size:16px;font-weight:700;">${esc(currentOwner)}</div>
           </div>
-          <div class="muted" style="font-size:12px;">${esc(dateStr)} &nbsp;·&nbsp; ${stats.totalOrders} orders processed</div>
+          <div class="muted" style="font-size:12px;">${esc(dateStr)} — ${stats.totalOrders} orders processed</div>
         </div>
         <div style="text-align:right;">
           <div class="muted" style="font-size:11.5px;">Net Profit</div>
@@ -923,12 +946,12 @@ function renderReturnsPanel(stats){
 }
 
 const STATUS_DEFS = [
-  { key:"totalOrders", label:"Total Orders", icon:"ic-grid", bg:"rgba(124,110,255,0.15)", color:"#8f85ff" },
-  { key:"shippedCount", label:"Shipped", icon:"ic-arrow", bg:"rgba(56,150,255,0.15)", color:"#4fa6ff" },
-  { key:"deliveredCount", label:"Delivered", icon:"ic-check", bg:"rgba(62,201,167,0.15)", color:"var(--teal)" },
-  { key:"cancelledCount", label:"Cancelled", icon:"ic-x", bg:"rgba(229,72,77,0.15)", color:"var(--alert)" },
-  { key:"rtoCount", label:"RTO", icon:"ic-refresh", bg:"rgba(255,153,51,0.15)", color:"#ff9933" },
-  { key:"crCount", label:"Returns", icon:"ic-return", bg:"rgba(242,183,5,0.15)", color:"var(--gold)" },
+  { key:"totalOrders", label:"Total Orders", icon:"ic-grid", bg:"rgba(107,74,115,0.16)", color:"#6B4A73" },
+  { key:"shippedCount", label:"Shipped", icon:"ic-arrow", bg:"rgba(59,94,122,0.16)", color:"#3B5E7A" },
+  { key:"deliveredCount", label:"Delivered", icon:"ic-check", bg:"rgba(46,106,78,0.16)", color:"var(--teal)" },
+  { key:"cancelledCount", label:"Cancelled", icon:"ic-x", bg:"rgba(162,58,52,0.16)", color:"var(--alert)" },
+  { key:"rtoCount", label:"RTO", icon:"ic-refresh", bg:"rgba(181,101,46,0.16)", color:"#B5652E" },
+  { key:"crCount", label:"Returns", icon:"ic-return", bg:"rgba(168,121,46,0.16)", color:"var(--gold)" },
 ];
 
 function renderStatusRow(stats){
@@ -1173,23 +1196,23 @@ function renderCharts(stats){
   if(financeChartInstance) financeChartInstance.destroy();
   if(outcomeChartInstance) outcomeChartInstance.destroy();
   if(trendChartInstance) trendChartInstance.destroy();
-  const gridColor = "#2A2E37";
-  const textColor = "#8B909A";
+  const gridColor = "#CBB98C";
+  const textColor = "#7C6C4E";
 
   trendChartInstance = new Chart(trendCtx, {
     type: "line",
     data: {
       labels: stats.trend.map(t=>t.month),
       datasets: [
-        { label:"Sales", data: stats.trend.map(t=>t.sales), borderColor:"#4fa6ff", backgroundColor:"#4fa6ff", tension:0.35, yAxisID:"y", pointRadius:3 },
-        { label:"Orders", data: stats.trend.map(t=>t.orders), borderColor:"#F2B705", backgroundColor:"#F2B705", tension:0.35, yAxisID:"y1", pointRadius:3 },
+        { label:"Sales", data: stats.trend.map(t=>t.sales), borderColor:"#3B5E7A", backgroundColor:"#3B5E7A", tension:0.35, yAxisID:"y", pointRadius:3 },
+        { label:"Orders", data: stats.trend.map(t=>t.orders), borderColor:"#A8792E", backgroundColor:"#A8792E", tension:0.35, yAxisID:"y1", pointRadius:3 },
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
       plugins: {
         legend: { position:"top", align:"end", labels:{ color:textColor, font:{size:11}, boxWidth:10 } },
-        title: { display:true, text:"Sales & orders trend", color:"#ECEDEE", font:{ family:"Sora", size:12, weight:"600" }, align:"start" }
+        title: { display:true, text:"Sales & orders trend", color:"#2A2013", font:{ family:"Fraunces", size:13, weight:"600" }, align:"start" }
       },
       scales: {
         x: { ticks:{ color:textColor, font:{size:10.5} }, grid:{ display:false } },
@@ -1205,14 +1228,14 @@ function renderCharts(stats){
       labels: ["Sale", "Cost", "Profit", "GST", "Net Profit"],
       datasets: [{
         data: [stats.totalSale, stats.totalCost, stats.profit, stats.gst, stats.netProfit],
-        backgroundColor: ["#F2B705", "#8B909A", "#3EC9A7", "#E5484D", "#F2B705"],
-        borderRadius: 5,
+        backgroundColor: ["#A8792E", "#7C6C4E", "#2E6A4E", "#A23A34", "#A8792E"],
+        borderRadius: 3,
         maxBarThickness: 44,
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display:false }, title: { display:true, text:"Financial overview", color:"#ECEDEE", font:{ family:"Sora", size:12, weight:"600" }, padding:{bottom:12} } },
+      plugins: { legend: { display:false }, title: { display:true, text:"Financial overview", color:"#2A2013", font:{ family:"Fraunces", size:13, weight:"600" }, padding:{bottom:12} } },
       scales: {
         x: { ticks:{ color:textColor, font:{size:10.5} }, grid:{ display:false } },
         y: { ticks:{ color:textColor, font:{size:10} }, grid:{ color:gridColor } }
@@ -1226,7 +1249,7 @@ function renderCharts(stats){
       labels: ["Delivered", "In progress", "RTO", "Customer Return"],
       datasets: [{
         data: [stats.deliveredCount, stats.inProgressCount, stats.rtoCount, stats.crCount],
-        backgroundColor: ["#3EC9A7", "#8B909A", "#E5484D", "#F2B705"],
+        backgroundColor: ["#2E6A4E", "#7C6C4E", "#B5652E", "#A8792E"],
         borderWidth: 0,
       }]
     },
@@ -1234,7 +1257,7 @@ function renderCharts(stats){
       responsive: true, maintainAspectRatio: false, cutout: "62%",
       plugins: {
         legend: { position:"bottom", labels:{ color:textColor, font:{size:10.5}, boxWidth:9, padding:12 } },
-        title: { display:true, text:"Order outcomes", color:"#ECEDEE", font:{ family:"Sora", size:12, weight:"600" }, padding:{bottom:12} }
+        title: { display:true, text:"Order outcomes", color:"#2A2013", font:{ family:"Fraunces", size:13, weight:"600" }, padding:{bottom:12} }
       }
     }
   });
@@ -1294,7 +1317,7 @@ function render(){
   document.getElementById("owner2Name").value = data.subOwners[1];
   document.getElementById("settlementVal").textContent = fmt(stats.settlement);
   document.getElementById("dataMeta").textContent = stats.totalOrders
-    ? stats.totalOrders + " orders · " + stats.crCount + " customer returns · " + stats.rtoCount + " RTO" + (stats.dateRange ? " · " + stats.dateRange.from + " – " + stats.dateRange.to : "")
+    ? stats.totalOrders + " orders, " + stats.crCount + " returns, " + stats.rtoCount + " RTO" + (stats.dateRange ? " (" + stats.dateRange.from + " to " + stats.dateRange.to + ")" : "")
     : "No data uploaded yet";
   document.getElementById("exportBtn").onclick = () => exportSummaryCsv(stats);
 }
