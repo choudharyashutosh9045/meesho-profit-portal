@@ -146,6 +146,7 @@
     <button class="tabbtn active" data-tab="dashboard"><svg class="icon"><use href="#ic-grid"/></svg>Dashboard</button>
     <button class="tabbtn" data-tab="upload"><svg class="icon"><use href="#ic-upload"/></svg>Upload data</button>
     <button class="tabbtn" data-tab="costs"><svg class="icon"><use href="#ic-tag"/></svg>Cost &amp; owners</button>
+    <button class="tabbtn" data-tab="stock"><svg class="icon"><use href="#ic-box"/></svg>Stock</button>
     <button class="tabbtn" data-tab="returns"><svg class="icon"><use href="#ic-return"/></svg>Returns</button>
     <button class="tabbtn" data-tab="received"><svg class="icon"><use href="#ic-check"/></svg>Received payment</button>
     <button class="tabbtn" data-tab="pending"><svg class="icon"><use href="#ic-clock"/></svg>Pending payment</button>
@@ -221,6 +222,11 @@
     <div class="card" id="costPanel" style="padding:0;"></div>
   </div>
 
+  <!-- STOCK -->
+  <div class="tabpanel" id="panel-stock">
+    <div class="card" id="stockPanel" style="padding:0;"></div>
+  </div>
+
   <!-- RETURNS -->
   <div class="tabpanel" id="panel-returns">
     <div class="card" id="returnsPanel" style="padding:0;"></div>
@@ -267,6 +273,13 @@
           <div class="muted" style="font-size:11.5px;">Configured as no loss — RTOs don't reduce Net Profit</div>
         </div>
         <div class="muted tabular" style="font-size:13px;">₹0 fixed</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--line);padding-top:16px;margin-top:16px;">
+        <div>
+          <div style="font-size:13px;">Low stock alert</div>
+          <div class="muted" style="font-size:11.5px;">Flag a SKU as low stock when quantity falls to or below this</div>
+        </div>
+        <div><input type="number" id="lowStockInput" style="width:64px;text-align:right;" class="tabular"/> units</div>
       </div>
     </div>
 
@@ -316,9 +329,9 @@ const dataKey = (o) => "mpp_data_v3_" + o;
 function emptyData(){
   return {
     orders: [], returns: [], payments: [],
-    costs: {}, returnCosts: {},
+    costs: {}, returnCosts: {}, stock: {},
     subOwners: ["Owner 1", "Owner 2"],
-    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0 }
+    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, lowStockThreshold: 5 }
   };
 }
 function listOwners(){ try{ return JSON.parse(localStorage.getItem(OWNERS_KEY) || "[]"); }catch(e){ return []; } }
@@ -335,6 +348,7 @@ function loadOwnerData(owner){
     merged.settings = Object.assign(base.settings, parsed.settings || {});
     merged.subOwners = parsed.subOwners && parsed.subOwners.length===2 ? parsed.subOwners : base.subOwners;
     merged.returnCosts = parsed.returnCosts || {};
+    merged.stock = parsed.stock || {};
     return merged;
   }catch(e){ return emptyData(); }
 }
@@ -403,6 +417,7 @@ async function refreshFromCloud(owner){
       merged.settings = Object.assign(base.settings, row.data.settings || {});
       merged.subOwners = row.data.subOwners && row.data.subOwners.length===2 ? row.data.subOwners : base.subOwners;
       merged.returnCosts = row.data.returnCosts || {};
+      merged.stock = row.data.stock || {};
       data = merged;
       saveOwnerData(owner, data); // keep local cache in step
       render();
@@ -457,7 +472,7 @@ if(!currentOwner || !owners.includes(currentOwner)){
 }
 let data = loadOwnerData(currentOwner);
 let financeChartInstance = null, outcomeChartInstance = null, trendChartInstance = null;
-let costFilter = "", returnsFilter = "", receivedFilter = "", pendingFilter = "";
+let costFilter = "", returnsFilter = "", receivedFilter = "", pendingFilter = "", stockFilter = "";
 let dateFrom = "", dateTo = "";
 
 function persist(){ saveOwnerData(currentOwner, data); render(); pushToCloud(currentOwner, data); }
@@ -565,6 +580,46 @@ async function applyCostSheet(file){
     }
     existing.sku = sku;
     data.costs[sku] = existing;
+    updated++;
+  }
+  return { updated, skipped };
+}
+
+// ---------- stock (all-time sold, independent of the dashboard date filter) ----------
+function computeSoldBySku(d){
+  const crSuborderSet = new Set(d.returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
+  const sold = {};
+  d.orders.forEach(o => {
+    if(o.status !== "DELIVERED" || crSuborderSet.has(o.subOrderNo)) return;
+    sold[o.sku] = (sold[o.sku] || 0) + o.qty;
+  });
+  return sold;
+}
+function downloadStockSheet(rows){
+  const header = ["SKU","Product","Current Stock"];
+  const lines = [header];
+  rows.forEach(([sku, name]) => {
+    const s = data.stock[sku];
+    lines.push([sku, name, s ? (s.qty ?? "") : ""]);
+  });
+  const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type:"text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = currentOwner.replace(/\s+/g,"_") + "_stock_sheet.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+async function applyStockSheet(file){
+  const rows = await readRowsAny(file);
+  let updated = 0, skipped = 0;
+  for(const row of rows){
+    const sku = cleanKey(findCol(row, ["sku", "sku id", "sku code"]));
+    if(!sku){ skipped++; continue; }
+    const qtyRaw = findCol(row, ["current stock", "stock", "quantity", "qty"]);
+    if(qtyRaw === ""){ skipped++; continue; }
+    data.stock[sku] = { qty: parseFloat(qtyRaw) || 0 };
     updated++;
   }
   return { updated, skipped };
@@ -1195,6 +1250,98 @@ function renderCostPanel(stats){
   });
 }
 
+function renderStockPanel(){
+  const el = document.getElementById("stockPanel");
+  const map = new Map();
+  data.orders.concat(data.returns).forEach(r => { if(r.sku && !map.has(r.sku)) map.set(r.sku, r.productName); });
+  let rows = Array.from(map.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
+  if(stockFilter) rows = rows.filter(([sku,name]) => sku.toLowerCase().includes(stockFilter) || name.toLowerCase().includes(stockFilter));
+  const sold = computeSoldBySku(data);
+  const threshold = Number(data.settings.lowStockThreshold) || 0;
+  const lowCount = Array.from(map.keys()).filter(sku => {
+    const qty = data.stock[sku] ? Number(data.stock[sku].qty) || 0 : 0;
+    return (sku in data.stock) && qty <= threshold;
+  }).length;
+  const warn = lowCount
+    ? `<div class="alert" style="font-size:11.5px;display:flex;gap:5px;align-items:center;">⚠ ${lowCount} low / out of stock</div>`
+    : "";
+  const header = `
+    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:14px;font-weight:600;">Stock on hand <span class="muted" style="font-weight:400;font-size:12px;">(${map.size} SKUs)</span></div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${warn}
+        <button class="btn-ghost" id="downloadStockSheetBtn"><svg class="icon"><use href="#ic-download"/></svg>Download sheet</button>
+        <button class="btn-ghost" id="uploadStockSheetBtn"><svg class="icon"><use href="#ic-upload"/></svg>Bulk update from Excel</button>
+        <input type="file" id="stockSheetFile" accept=".csv,.xlsx,.xls" style="display:none;"/>
+        <div style="position:relative;">
+          <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
+          <input id="stockSearch" placeholder="Search SKU or product" value="${esc(stockFilter)}" style="padding-left:30px;width:200px;"/>
+        </div>
+      </div>
+    </div>
+    <div id="stockSheetMsg" class="muted" style="padding:0 18px 10px;font-size:11.5px;"></div>
+    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Set the current stock you're holding for each SKU. "Sold (all time)" is a read-only tally from your delivered orders, for reference while you count.</div>`;
+  let tableRows = rows.map(([sku, name]) => {
+    const rec = data.stock[sku];
+    const qty = rec ? rec.qty : "";
+    const soldQty = sold[sku] || 0;
+    let statusBadge;
+    if(!(sku in data.stock)){
+      statusBadge = `<span class="badge">Not set</span>`;
+    } else if((Number(qty)||0) <= 0){
+      statusBadge = `<span class="badge" style="background:rgba(162,58,52,0.16);color:var(--alert);">Out of stock</span>`;
+    } else if((Number(qty)||0) <= threshold){
+      statusBadge = `<span class="badge" style="background:rgba(181,101,46,0.16);color:#B5652E;">Low stock</span>`;
+    } else {
+      statusBadge = `<span class="badge" style="background:rgba(46,106,78,0.16);color:var(--teal);">In stock</span>`;
+    }
+    return `<tr>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(sku)}</td>
+      <td>${esc(name)}</td>
+      <td class="muted tabular" style="text-align:right;">${soldQty}</td>
+      <td style="text-align:right;"><input type="number" data-sku="${esc(sku)}" data-name="${esc(name)}" class="stockInput tabular" style="width:80px;text-align:right;" value="${qty}" placeholder="0"/></td>
+      <td>${statusBadge}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = header + `
+    <div style="border-top:1px solid var(--line);max-height:440px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>SKU</th><th>Product</th><th style="text-align:right;">Sold (all time)</th><th style="text-align:right;">Current stock</th><th>Status</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  document.getElementById("stockSearch").addEventListener("input", (e) => {
+    stockFilter = e.target.value.toLowerCase();
+    renderStockPanel();
+  });
+  document.getElementById("downloadStockSheetBtn").addEventListener("click", () => downloadStockSheet(rows));
+  document.getElementById("uploadStockSheetBtn").addEventListener("click", () => document.getElementById("stockSheetFile").click());
+  document.getElementById("stockSheetFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+    const msg = document.getElementById("stockSheetMsg");
+    msg.textContent = "Reading...";
+    try{
+      const { updated, skipped } = await applyStockSheet(file);
+      msg.className = "teal";
+      msg.textContent = `Updated ${updated} SKU${updated===1?"":"s"}` + (skipped ? `, ${skipped} row${skipped===1?"":"s"} skipped (no matching SKU/stock column)` : "");
+      persist();
+    }catch(err){
+      msg.className = "alert";
+      msg.textContent = err.message || "Could not read this file";
+    }
+  });
+  el.querySelectorAll(".stockInput").forEach(inp => {
+    inp.addEventListener("change", (e) => {
+      const sku = e.target.getAttribute("data-sku");
+      const val = parseFloat(e.target.value) || 0;
+      data.stock[sku] = { qty: val };
+      persist();
+    });
+  });
+}
+
 function renderCharts(stats){
   const financeCtx = document.getElementById("financeChart");
   const outcomeCtx = document.getElementById("outcomeChart");
@@ -1318,6 +1465,7 @@ function render(){
     () => renderReceivedPanel(stats),
     () => renderPendingPanel(stats),
     () => renderCostPanel(stats),
+    () => renderStockPanel(),
     () => renderCharts(stats),
   ];
   safeCalls.forEach(fn => {
@@ -1326,6 +1474,7 @@ function render(){
   document.getElementById("gstInput").value = data.settings.gstPercent;
   document.getElementById("crFlatInput").value = data.settings.customerReturnFlatLoss;
   document.getElementById("adsCostInput").value = data.settings.adsCost;
+  document.getElementById("lowStockInput").value = data.settings.lowStockThreshold;
   document.getElementById("owner1Name").value = data.subOwners[0];
   document.getElementById("owner2Name").value = data.subOwners[1];
   document.getElementById("settlementVal").textContent = fmt(stats.settlement);
@@ -1345,6 +1494,10 @@ document.getElementById("crFlatInput").addEventListener("change", (e) => {
 });
 document.getElementById("adsCostInput").addEventListener("change", (e) => {
   data.settings.adsCost = parseFloat(e.target.value) || 0;
+  persist();
+});
+document.getElementById("lowStockInput").addEventListener("change", (e) => {
+  data.settings.lowStockThreshold = parseFloat(e.target.value) || 0;
   persist();
 });
 document.getElementById("owner1Name").addEventListener("change", (e) => {
