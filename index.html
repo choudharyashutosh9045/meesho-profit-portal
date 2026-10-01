@@ -182,7 +182,7 @@
   <div class="tabpanel" id="panel-upload">
     <div class="card" style="padding:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <div style="font-size:14px;font-weight:600;">Upload your 4 Meesho exports</div>
+        <div style="font-size:14px;font-weight:600;">Upload your Meesho exports</div>
         <button class="btn-ghost danger" id="resetBtn"><svg class="icon"><use href="#ic-trash"/></svg>Reset this business's data</button>
       </div>
       <div class="grid4" id="uploadGrid"></div>
@@ -309,7 +309,7 @@ const dataKey = (o) => "mpp_data_v3_" + o;
 
 function emptyData(){
   return {
-    orders: [], returns: [], payments: [],
+    orders: [], returns: [], payments: [], outstandingPayments: [],
     costs: {}, returnCosts: {}, stock: {},
     subOwners: ["Owner 1", "Owner 2"],
     settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, lowStockThreshold: 5 }
@@ -330,6 +330,7 @@ function loadOwnerData(owner){
     merged.subOwners = parsed.subOwners && parsed.subOwners.length===2 ? parsed.subOwners : base.subOwners;
     merged.returnCosts = parsed.returnCosts || {};
     merged.stock = parsed.stock || {};
+    merged.outstandingPayments = parsed.outstandingPayments || [];
     return merged;
   }catch(e){ return emptyData(); }
 }
@@ -339,10 +340,6 @@ function saveOwnerData(owner, data){ try{ localStorage.setItem(dataKey(owner), J
 const SB_URL_KEY = "mpp_supabase_url";
 const SB_KEY_KEY = "mpp_supabase_key";
 const SB_DISABLED_KEY = "mpp_supabase_disabled";
-// Embedded defaults so this dashboard auto-connects for anyone who opens
-// the deployed link — no manual setup needed. A per-browser override
-// (entered in Settings) still takes priority if ever set, and Disconnect
-// lets this one browser opt out of cloud sync entirely.
 const DEFAULT_SUPABASE_URL = "https://nvkwipdfurzhcqpginfy.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_Rg4K-nXqHvteC_y1X2FBEQ_KSsUndo-";
 let sbClient = null;
@@ -366,8 +363,6 @@ function setSyncStatus(text, isError){
   el.style.color = isError ? "var(--alert)" : (sbClient ? "var(--teal)" : "var(--muted)");
 }
 
-// Push the in-memory `data` for the given owner up to Supabase in the
-// background. Never blocks the UI — local save + render already happened.
 async function pushToCloud(owner, payload){
   if(!sbClient) return;
   setSyncStatus("Syncing...");
@@ -383,9 +378,6 @@ async function pushToCloud(owner, payload){
   }
 }
 
-// Fetch the latest data for an owner from Supabase, in the background.
-// If found, replaces the in-memory `data` and re-renders — this is what
-// makes a second device/browser catch up automatically.
 async function refreshFromCloud(owner){
   if(!sbClient) return;
   try{
@@ -399,8 +391,9 @@ async function refreshFromCloud(owner){
       merged.subOwners = row.data.subOwners && row.data.subOwners.length===2 ? row.data.subOwners : base.subOwners;
       merged.returnCosts = row.data.returnCosts || {};
       merged.stock = row.data.stock || {};
+      merged.outstandingPayments = row.data.outstandingPayments || [];
       data = merged;
-      saveOwnerData(owner, data); // keep local cache in step
+      saveOwnerData(owner, data);
       render();
       setSyncStatus("Synced " + new Date().toLocaleTimeString());
     } else {
@@ -412,21 +405,12 @@ async function refreshFromCloud(owner){
   }
 }
 
-// Fetch the real list of businesses that exist in Supabase (every row in
-// business_data is one business) — without this, a browser that has never
-// used this dashboard before only knows about a locally-invented default
-// name ("My Store"), which is why someone opening a shared link saw all
-// zeros: they were looking at their own empty "My Store", not the sender's
-// actual business.
 async function fetchOwnersFromCloud(){
   if(!sbClient) return;
   try{
     const { data: rows, error } = await sbClient.from("business_data").select("business");
     if(error) throw error;
     if(!rows || !rows.length){
-      // Nothing in the cloud table yet — this is the very first sync since
-      // credentials were embedded, so push this browser's existing local
-      // data up as the seed (safe: nothing to overwrite).
       pushToCloud(currentOwner, data);
       return;
     }
@@ -566,7 +550,7 @@ async function applyCostSheet(file){
   return { updated, skipped };
 }
 
-// ---------- stock (all-time sold, independent of the dashboard date filter) ----------
+// ---------- stock (all-time, independent of the dashboard date filter) ----------
 function computeSoldBySku(d){
   const crSuborderSet = new Set(d.returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
   const sold = {};
@@ -653,9 +637,6 @@ function crLossFor(rec){
 }
 
 function computeStats(d, dateFrom, dateTo){
-  // Optional date-range scoping (dateFrom/dateTo are "yyyy-mm-dd" strings,
-  // same format Meesho's Order Date column and <input type=date> both use,
-  // so plain string comparison works).
   let orders = d.orders;
   if(dateFrom || dateTo){
     orders = orders.filter(o => {
@@ -697,10 +678,20 @@ function computeStats(d, dateFrom, dateTo){
   const missing = Array.from(new Set(allSkuRows.filter(r=>!(r.sku in d.costs) || (Number(d.costs[r.sku].cost)||0)===0).map(r=>r.sku).filter(Boolean)));
 
   const paymentSuborderSet = new Set(payments.map(p=>p.subOrderNo));
-  const pendingOrders = saleOrders.filter(o => !paymentSuborderSet.has(o.subOrderNo));
-  const pendingAmount = pendingOrders.reduce((s,o)=>s+o.saleAmount,0);
+  let outstandingPayments = d.outstandingPayments;
+  if(dateFrom || dateTo){
+    outstandingPayments = outstandingPayments.filter(p => orderSuborderSet.has(p.subOrderNo));
+  }
+  const outstandingMap = new Map(outstandingPayments.map(p => [p.subOrderNo, p.finalSettlement]));
+  const pendingOrders = saleOrders
+    .filter(o => !paymentSuborderSet.has(o.subOrderNo))
+    .map(o => ({
+      ...o,
+      estimatedAmount: outstandingMap.has(o.subOrderNo) ? outstandingMap.get(o.subOrderNo) : o.saleAmount,
+      isEstimate: !outstandingMap.has(o.subOrderNo),
+    }));
+  const pendingAmount = pendingOrders.reduce((s,o)=>s+o.estimatedAmount,0);
 
-  // per sub-owner totals + a flat performance-table version of the same
   const bySubOwner = {};
   d.subOwners.forEach(o => bySubOwner[o] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 });
   saleOrders.forEach(o => {
@@ -710,7 +701,7 @@ function computeStats(d, dateFrom, dateTo){
     bySubOwner[owner].cost += o.qty*costOf(o.sku);
     bySubOwner[owner].orders += 1;
     if(paymentSuborderSet.has(o.subOrderNo)) bySubOwner[owner].received += o.saleAmount;
-    else bySubOwner[owner].pending += o.saleAmount;
+    else bySubOwner[owner].pending += (outstandingMap.has(o.subOrderNo) ? outstandingMap.get(o.subOrderNo) : o.saleAmount);
   });
   crRecs.forEach(r => {
     const owner = ownerOf(r.sku);
@@ -725,7 +716,6 @@ function computeStats(d, dateFrom, dateTo){
     s.netProfit = s.profit - s.gst - s.crLoss;
   });
 
-  // status breakdown (based on ALL orders in range, cancelled included)
   const cancelledCount = orders.filter(o => o.status === "CANCELLED").length;
   const nonCancelled = orders.filter(o => o.status !== "CANCELLED");
   const shippedCount = orders.filter(o => o.status === "SHIPPED").length;
@@ -741,11 +731,10 @@ function computeStats(d, dateFrom, dateTo){
   const dates = d.orders.map(o=>o.orderDate).filter(Boolean).sort();
   const dateRange = dates.length ? { from: dates[0], to: dates[dates.length-1] } : null;
 
-  // monthly Sales & Orders trend (last 6 months of data available)
   const byMonth = {};
   saleOrders.forEach(o => {
     if(!o.orderDate) return;
-    const month = o.orderDate.slice(0,7); // yyyy-mm
+    const month = o.orderDate.slice(0,7);
     if(!byMonth[month]) byMonth[month] = { sales:0, orders:0 };
     byMonth[month].sales += o.saleAmount;
     byMonth[month].orders += 1;
@@ -804,6 +793,7 @@ const SLOTS = [
   { key:"completed", label:"Completed / Delivered", hint:"completed_delivered...csv" },
   { key:"intransit", label:"Intransit (RTO)", hint:"intransit...csv" },
   { key:"payments", label:"Payment file", hint:"...PAYMENT_FILE...xlsx" },
+  { key:"outstanding", label:"Outstanding payment", hint:"...OUTSTANDING_PAYMENT...xlsx" },
 ];
 
 function renderUploadGrid(){
@@ -816,7 +806,7 @@ function renderUploadGrid(){
     btn.innerHTML = `<svg class="icon" style="width:20px;height:20px;color:var(--muted);"><use href="#ic-upload"/></svg><span style="font-size:12.5px;text-align:center;">${slot.label}</span><span class="muted" style="font-size:10px;text-align:center;">${slot.hint}</span>`;
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = slot.key === "payments" ? ".xlsx" : ".csv";
+    input.accept = (slot.key === "payments" || slot.key === "outstanding") ? ".xlsx" : ".csv";
     input.style.display = "none";
     const msg = document.createElement("div");
     msg.style.fontSize = "11px";
@@ -842,6 +832,10 @@ function renderUploadGrid(){
           const recs = await parsePaymentsXlsx(file);
           const r = mergeBy(data.payments, recs, x=>x.subOrderNo);
           data.payments = r.merged; added = r.added; total = recs.length;
+        } else if(slot.key === "outstanding"){
+          const recs = await parsePaymentsXlsx(file);
+          const r = mergeBy(data.outstandingPayments, recs, x=>x.subOrderNo);
+          data.outstandingPayments = r.merged; added = r.added; total = recs.length;
         }
         msg.className = "teal";
         const skipped = total - added;
@@ -1040,7 +1034,7 @@ function renderOwnerPerfTable(stats){
   const rows = data.subOwners.map(name => {
     const s = stats.bySubOwner[name] || {orders:0,sale:0,gst:0,received:0,pending:0,returns:0};
     return `<tr>
-      <td><span class="badge" style="background:rgba(242,183,5,0.15);color:var(--gold);">${esc(name)}</span></td>
+      <td><span class="badge" style="background:rgba(36,84,199,0.14);color:var(--gold);">${esc(name)}</span></td>
       <td class="tabular">${s.orders}</td>
       <td class="tabular">${fmt(s.sale)}</td>
       <td class="tabular">${fmt(s.gst)}</td>
@@ -1114,7 +1108,7 @@ function renderPendingPanel(stats){
         <input id="pendingSearch" placeholder="Search Sub Order No, SKU or product" value="${esc(pendingFilter)}" style="padding-left:30px;width:250px;"/>
       </div>
     </div>
-    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Estimated from sale amount — actual Meesho payout may differ slightly after commission. Upload a newer payment file to move these into Received.</div>`;
+    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Amount shown is Meesho's own outstanding-file estimate where available (marked "Meesho est."); otherwise it's the raw sale amount as a rough placeholder. Upload the Outstanding payment file for more accurate figures, and a newer Payment file to move these into Received.</div>`;
   if(!stats.saleOrders.length){
     el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No delivered orders yet.</div>`;
     return;
@@ -1123,13 +1117,14 @@ function renderPendingPanel(stats){
       <td class="muted tabular" style="white-space:nowrap;">${esc(o.subOrderNo)}</td>
       <td>${esc(o.productName)}</td>
       <td class="muted tabular">${esc(o.sku)}</td>
-      <td style="text-align:right;" class="gold tabular">${fmt(o.saleAmount)}</td>
+      <td style="text-align:right;" class="gold tabular">${fmt(o.estimatedAmount)}</td>
+      <td style="text-align:right;">${o.isEstimate ? '<span class="badge">rough</span>' : '<span class="badge" style="color:var(--teal);">Meesho est.</span>'}</td>
     </tr>`).join("");
   el.innerHTML = header + `
     <div style="border-top:1px solid var(--line);max-height:400px;overflow-y:auto;">
       <table>
-        <thead><tr><th>Sub Order No</th><th>Product</th><th>SKU</th><th style="text-align:right;">Sale amount</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">All caught up — nothing pending</td></tr>`}</tbody>
+        <thead><tr><th>Sub Order No</th><th>Product</th><th>SKU</th><th style="text-align:right;">Amount</th><th style="text-align:right;">Source</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">All caught up — nothing pending</td></tr>`}</tbody>
       </table>
     </div>`;
   document.getElementById("pendingSearch").addEventListener("input", (e) => {
@@ -1262,6 +1257,10 @@ function renderStockPanel(){
     </div>
     <div id="stockSheetMsg" class="muted" style="padding:0 18px 10px;font-size:11.5px;"></div>
     <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Set the current stock you're holding for each SKU. "Sold (all time)" is a read-only tally from your delivered orders, for reference while you count.</div>`;
+  if(!map.size){
+    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No SKUs yet — upload an Orders file first, then set each SKU's stock here.</div>`;
+    return;
+  }
   let tableRows = rows.map(([sku, name]) => {
     const rec = data.stock[sku];
     const qty = rec ? rec.qty : "";
@@ -1508,7 +1507,7 @@ document.getElementById("clearFilterBtn").addEventListener("click", () => {
 });
 document.getElementById("resetBtn").addEventListener("click", () => {
   if(confirm('Clear all uploaded data for "' + currentOwner + '"? Cost prices and settings will be kept.')){
-    data.orders = []; data.returns = []; data.payments = []; data.returnCosts = {};
+    data.orders = []; data.returns = []; data.payments = []; data.outstandingPayments = []; data.returnCosts = {};
     persist();
   }
 });
@@ -1524,7 +1523,7 @@ document.getElementById("saveSupabaseBtn").addEventListener("click", () => {
   if(!sbClient){ setSyncStatus("Could not connect — check the URL/key", true); return; }
   setSyncStatus("Connecting...");
   refreshFromCloud(currentOwner);
-  pushToCloud(currentOwner, data); // also push whatever's local so the first sync isn't empty
+  pushToCloud(currentOwner, data);
 });
 document.getElementById("disconnectSupabaseBtn").addEventListener("click", () => {
   localStorage.setItem(SB_DISABLED_KEY, "1");
