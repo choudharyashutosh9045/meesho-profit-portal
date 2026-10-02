@@ -251,6 +251,13 @@
         </div>
         <div>₹ <input type="number" id="adsCostInput" style="width:64px;text-align:right;" class="tabular"/></div>
       </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
+        <div>
+          <div style="font-size:13px;">Other cost</div>
+          <div class="muted" style="font-size:11.5px;">Miscellaneous business expenses (packaging, courier supplies, labour, etc.) — subtracted once from Net Profit</div>
+        </div>
+        <div>₹ <input type="number" id="otherCostInput" style="width:64px;text-align:right;" class="tabular"/></div>
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <div>
           <div style="font-size:13px;">RTO loss</div>
@@ -316,7 +323,7 @@ function emptyData(){
     adsCostRows: [], referralRows: [], compensationRows: [],
     costs: {}, returnCosts: {}, returnCostsAuto: {}, stock: {},
     subOwners: ["Owner 1", "Owner 2"],
-    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, lowStockThreshold: 5 }
+    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, otherCost: 0, lowStockThreshold: 5 }
   };
 }
 function listOwners(){ try{ return JSON.parse(localStorage.getItem(OWNERS_KEY) || "[]"); }catch(e){ return []; } }
@@ -348,10 +355,6 @@ function saveOwnerData(owner, data){ try{ localStorage.setItem(dataKey(owner), J
 const SB_URL_KEY = "mpp_supabase_url";
 const SB_KEY_KEY = "mpp_supabase_key";
 const SB_DISABLED_KEY = "mpp_supabase_disabled";
-// Embedded defaults so this dashboard auto-connects for anyone who opens
-// the deployed link — no manual setup needed. A per-browser override
-// (entered in Settings) still takes priority if ever set, and Disconnect
-// lets this one browser opt out of cloud sync entirely.
 const DEFAULT_SUPABASE_URL = "https://nvkwipdfurzhcqpginfy.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_Rg4K-nXqHvteC_y1X2FBEQ_KSsUndo-";
 let sbClient = null;
@@ -375,8 +378,6 @@ function setSyncStatus(text, isError){
   el.style.color = isError ? "var(--alert)" : (sbClient ? "var(--teal)" : "var(--muted)");
 }
 
-// Push the in-memory `data` for the given owner up to Supabase in the
-// background. Never blocks the UI — local save + render already happened.
 async function pushToCloud(owner, payload){
   if(!sbClient) return;
   setSyncStatus("Syncing...");
@@ -392,9 +393,6 @@ async function pushToCloud(owner, payload){
   }
 }
 
-// Fetch the latest data for an owner from Supabase, in the background.
-// If found, replaces the in-memory `data` and re-renders — this is what
-// makes a second device/browser catch up automatically.
 async function refreshFromCloud(owner){
   if(!sbClient) return;
   try{
@@ -414,7 +412,7 @@ async function refreshFromCloud(owner){
       merged.referralRows = row.data.referralRows || [];
       merged.compensationRows = row.data.compensationRows || [];
       data = merged;
-      saveOwnerData(owner, data); // keep local cache in step
+      saveOwnerData(owner, data);
       render();
       setSyncStatus("Synced " + new Date().toLocaleTimeString());
     } else {
@@ -426,21 +424,12 @@ async function refreshFromCloud(owner){
   }
 }
 
-// Fetch the real list of businesses that exist in Supabase (every row in
-// business_data is one business) — without this, a browser that has never
-// used this dashboard before only knows about a locally-invented default
-// name ("My Store"), which is why someone opening a shared link saw all
-// zeros: they were looking at their own empty "My Store", not the sender's
-// actual business.
 async function fetchOwnersFromCloud(){
   if(!sbClient) return;
   try{
     const { data: rows, error } = await sbClient.from("business_data").select("business");
     if(error) throw error;
     if(!rows || !rows.length){
-      // Nothing in the cloud table yet — this is the very first sync since
-      // credentials were embedded, so push this browser's existing local
-      // data up as the seed (safe: nothing to overwrite).
       pushToCloud(currentOwner, data);
       return;
     }
@@ -648,24 +637,11 @@ async function parsePaymentsXlsx(file){
         const liveStatus = cleanKey(row[statusIdx]);
         const payDateRaw = cleanKey(row[payDateIdx]).toLowerCase();
         const rec = { subOrderNo, finalSettlement, liveStatus };
-        // Meesho marks a row's Payment Date as "unscheduled" (or leaves it blank)
-        // when the payout hasn't actually happened yet — those are NOT money
-        // received, so they're kept separate from `received` to avoid counting
-        // expected-but-unpaid amounts as settled.
         if(!payDateRaw || payDateRaw === "unscheduled"){
           outstanding.push(rec);
         } else {
           received.push(rec);
         }
-        // For a "Return" row, Final Settlement Amount already nets the Return
-        // Shipping Charge (and any other recovery deducted on that order) —
-        // it's the real, order-specific cost of that return. Capture it so we
-        // can auto-fill the Returns tab's per-order loss with the actual
-        // Meesho number instead of the flat default guess. The payment file
-        // also carries the product/SKU/qty for that row, so we can build a
-        // full return record here too — that way a return shows up (and
-        // actually counts in Net Profit) even if the seller never uploads
-        // the separate Completed/Intransit export that normally feeds returns.
         if(liveStatus.toLowerCase() === "return"){
           if(finalSettlement < 0) returnLossRows.push({ subOrderNo, amount: Math.abs(finalSettlement) });
           paymentReturns.push({
@@ -687,10 +663,6 @@ async function parsePaymentsXlsx(file){
   };
 }
 
-// Meesho's Ads Cost / Referral Payments / Compensation & Recovery sheets all
-// share the same shape: a merged title row, a header row, a formula-key row
-// (single letters like A/B/C referencing the column formulas), then either
-// data rows or a single "No data is available for these dates." sentinel row.
 function readSectionRows(wb, sheetName, headerFirstCell){
   const sheet = wb.Sheets[sheetName];
   if(!sheet) return { headers: [], rows: [] };
@@ -773,9 +745,6 @@ function crLossFor(rec){
 }
 
 function computeStats(d, dateFrom, dateTo){
-  // Optional date-range scoping (dateFrom/dateTo are "yyyy-mm-dd" strings,
-  // same format Meesho's Order Date column and <input type=date> both use,
-  // so plain string comparison works).
   let orders = d.orders;
   if(dateFrom || dateTo){
     orders = orders.filter(o => {
@@ -805,7 +774,8 @@ function computeStats(d, dateFrom, dateTo){
   const totalSale = saleOrders.reduce((s,o)=>s+o.saleAmount,0);
   const productCost = saleOrders.reduce((s,o)=>s+o.qty*costOf(o.sku),0);
   const adsCost = Number(d.settings.adsCost) || 0;
-  const totalCost = productCost + adsCost;
+  const globalOtherCost = Number(d.settings.otherCost) || 0;
+  const totalCost = productCost + adsCost + globalOtherCost;
   const profit = totalSale - totalCost;
   const gstPct = d.settings.gstPercent;
   const gst = totalSale * (gstPct/(100+gstPct));
@@ -839,7 +809,6 @@ function computeStats(d, dateFrom, dateTo){
   const compensationTotal = d.compensationRows.reduce((s,r)=>s+r.amount,0);
   const outstandingTotal = outstandingRows.reduce((s,o)=>s+o.finalSettlement,0);
 
-  // per sub-owner totals + a flat performance-table version of the same
   const bySubOwner = {};
   d.subOwners.forEach(o => bySubOwner[o] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 });
   saleOrders.forEach(o => {
@@ -864,7 +833,6 @@ function computeStats(d, dateFrom, dateTo){
     s.netProfit = s.profit - s.gst - s.crLoss;
   });
 
-  // status breakdown (based on ALL orders in range, cancelled included)
   const cancelledCount = orders.filter(o => o.status === "CANCELLED").length;
   const nonCancelled = orders.filter(o => o.status !== "CANCELLED");
   const shippedCount = orders.filter(o => o.status === "SHIPPED").length;
@@ -880,11 +848,10 @@ function computeStats(d, dateFrom, dateTo){
   const dates = d.orders.map(o=>o.orderDate).filter(Boolean).sort();
   const dateRange = dates.length ? { from: dates[0], to: dates[dates.length-1] } : null;
 
-  // monthly Sales & Orders trend (last 6 months of data available)
   const byMonth = {};
   saleOrders.forEach(o => {
     if(!o.orderDate) return;
-    const month = o.orderDate.slice(0,7); // yyyy-mm
+    const month = o.orderDate.slice(0,7);
     if(!byMonth[month]) byMonth[month] = { sales:0, orders:0 };
     byMonth[month].sales += o.saleAmount;
     byMonth[month].orders += 1;
@@ -893,7 +860,7 @@ function computeStats(d, dateFrom, dateTo){
   const trend = trendMonths.map(m => ({ month:m, sales:byMonth[m].sales, orders:byMonth[m].orders }));
 
   return {
-    totalSale, totalCost, productCost, adsCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss, crAutoCount, crDefaultCount,
+    totalSale, totalCost, productCost, adsCost, globalOtherCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss, crAutoCount, crDefaultCount,
     netProfit, settlement, orderCount:saleOrders.length, totalOrders:totalOrdersAll, missing, bySubOwner,
     deliveredCount: deliveredAllCount, inProgressCount, dateRange, saleOrders, pendingOrders, pendingAmount,
     cancelledCount, shippedCount, deliveryRate, rtoRate, returnRate, trend,
@@ -996,9 +963,6 @@ function renderUploadGrid(){
           data.compensationRows = rComp.merged;
           const rPayReturns = mergeBy(data.returns, parsed.paymentReturns, x=>x.suborderNo);
           data.returns = rPayReturns.merged;
-          // Auto-fill the Returns tab's per-order loss with the real Meesho
-          // number for that order, as long as the seller hasn't manually
-          // overridden it — a manual edit always wins over the file.
           let autoFilled = 0;
           parsed.returnLossRows.forEach(r => {
             const isUntouched = data.returnCosts[r.subOrderNo] === undefined || data.returnCostsAuto[r.subOrderNo];
@@ -1075,7 +1039,7 @@ function renderKpis(stats){
   const el = document.getElementById("kpiGrid");
   const subs = {
     totalSale: stats.orderCount + " delivered orders",
-    totalCost: "product + other + ads cost",
+    totalCost: "product + other + ads" + (stats.globalOtherCost ? " + misc ₹" + Math.round(stats.globalOtherCost).toLocaleString("en-IN") : ""),
     profit: "sale − cost",
     gst: data.settings.gstPercent + "% of sale",
     rtoLoss: stats.rtoCount + " orders, no loss",
@@ -1594,8 +1558,9 @@ function exportSummaryCsv(stats){
     ["Business", currentOwner],
     ["Date range", stats.dateRange ? stats.dateRange.from + " to " + stats.dateRange.to : "N/A"],
     ["Total Sale", stats.totalSale.toFixed(2)],
-    ["Total Cost (incl. ads)", stats.totalCost.toFixed(2)],
+    ["Total Cost (incl. ads + other)", stats.totalCost.toFixed(2)],
     ["Ads Cost", stats.adsCost.toFixed(2)],
+    ["Other Cost (global)", stats.globalOtherCost.toFixed(2)],
     ["Profit", stats.profit.toFixed(2)],
     ["GST (" + data.settings.gstPercent + "%)", stats.gst.toFixed(2)],
     ["RTO count", stats.rtoCount],
@@ -1640,6 +1605,7 @@ function render(){
   document.getElementById("gstInput").value = data.settings.gstPercent;
   document.getElementById("crFlatInput").value = data.settings.customerReturnFlatLoss;
   document.getElementById("adsCostInput").value = data.settings.adsCost;
+  document.getElementById("otherCostInput").value = data.settings.otherCost || 0;
   document.getElementById("lowStockInput").value = data.settings.lowStockThreshold;
   document.getElementById("owner1Name").value = data.subOwners[0];
   document.getElementById("owner2Name").value = data.subOwners[1];
@@ -1660,6 +1626,10 @@ document.getElementById("crFlatInput").addEventListener("change", (e) => {
 });
 document.getElementById("adsCostInput").addEventListener("change", (e) => {
   data.settings.adsCost = parseFloat(e.target.value) || 0;
+  persist();
+});
+document.getElementById("otherCostInput").addEventListener("change", (e) => {
+  data.settings.otherCost = parseFloat(e.target.value) || 0;
   persist();
 });
 document.getElementById("lowStockInput").addEventListener("change", (e) => {
@@ -1709,7 +1679,7 @@ document.getElementById("saveSupabaseBtn").addEventListener("click", () => {
   if(!sbClient){ setSyncStatus("Could not connect — check the URL/key", true); return; }
   setSyncStatus("Connecting...");
   refreshFromCloud(currentOwner);
-  pushToCloud(currentOwner, data); // also push whatever's local so the first sync isn't empty
+  pushToCloud(currentOwner, data);
 });
 document.getElementById("disconnectSupabaseBtn").addEventListener("click", () => {
   localStorage.setItem(SB_DISABLED_KEY, "1");
