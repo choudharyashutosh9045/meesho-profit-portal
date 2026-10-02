@@ -626,6 +626,7 @@ async function parsePaymentsXlsx(file){
   const received = [];
   const outstanding = [];
   const returnLossRows = [];
+  const paymentReturns = [];
   const sheet = wb.Sheets["Order Payments"];
   if(sheet){
     const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
@@ -636,6 +637,9 @@ async function parsePaymentsXlsx(file){
       const settlementIdx = headers.indexOf("Final Settlement Amount");
       const statusIdx = headers.indexOf("Live Order Status");
       const payDateIdx = headers.indexOf("Payment Date");
+      const productNameIdx = headers.indexOf("Product Name");
+      const skuIdx = headers.indexOf("Supplier SKU");
+      const qtyIdx = headers.indexOf("Quantity");
       for(let i = headerIdx+2; i < rows.length; i++){
         const row = rows[i];
         const subOrderNo = cleanKey(row[subOrderIdx]);
@@ -657,15 +661,26 @@ async function parsePaymentsXlsx(file){
         // Shipping Charge (and any other recovery deducted on that order) —
         // it's the real, order-specific cost of that return. Capture it so we
         // can auto-fill the Returns tab's per-order loss with the actual
-        // Meesho number instead of the flat default guess.
-        if(liveStatus.toLowerCase() === "return" && finalSettlement < 0){
-          returnLossRows.push({ subOrderNo, amount: Math.abs(finalSettlement) });
+        // Meesho number instead of the flat default guess. The payment file
+        // also carries the product/SKU/qty for that row, so we can build a
+        // full return record here too — that way a return shows up (and
+        // actually counts in Net Profit) even if the seller never uploads
+        // the separate Completed/Intransit export that normally feeds returns.
+        if(liveStatus.toLowerCase() === "return"){
+          if(finalSettlement < 0) returnLossRows.push({ subOrderNo, amount: Math.abs(finalSettlement) });
+          paymentReturns.push({
+            suborderNo: subOrderNo,
+            sku: cleanKey(row[skuIdx]),
+            productName: cleanKey(row[productNameIdx]),
+            qty: parseFloat(row[qtyIdx] || "1") || 1,
+            type: "CUSTOMER_RETURN",
+          });
         }
       }
     }
   }
   return {
-    received, outstanding, returnLossRows,
+    received, outstanding, returnLossRows, paymentReturns,
     adsCostRows: parseAdsCostSheet(wb),
     referralRows: parseReferralSheet(wb),
     compensationRows: parseCompensationSheet(wb),
@@ -977,6 +992,8 @@ function renderUploadGrid(){
           data.referralRows = rRef.merged;
           const rComp = mergeBy(data.compensationRows, parsed.compensationRows, x=>x.date+"|"+x.program+"|"+x.reason+"|"+x.amount);
           data.compensationRows = rComp.merged;
+          const rPayReturns = mergeBy(data.returns, parsed.paymentReturns, x=>x.suborderNo);
+          data.returns = rPayReturns.merged;
           // Auto-fill the Returns tab's per-order loss with the real Meesho
           // number for that order, as long as the seller hasn't manually
           // overridden it — a manual edit always wins over the file.
@@ -996,6 +1013,7 @@ function renderUploadGrid(){
           if(rAds.added) parts.push(rAds.added + " ads cost");
           if(rRef.added) parts.push(rRef.added + " referral");
           if(rComp.added) parts.push(rComp.added + " compensation/recovery");
+          if(rPayReturns.added) parts.push(rPayReturns.added + " returns found");
           if(autoFilled) parts.push(autoFilled + " return loss amounts auto-filled");
           msg.textContent = parts.length ? "Added: " + parts.join(", ") : "No new rows found (already counted)";
         }
