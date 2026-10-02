@@ -815,6 +815,8 @@ function computeStats(d, dateFrom, dateTo){
   const crRecs = returns.filter(r=>r.type==="CUSTOMER_RETURN");
   const crCount = crRecs.length;
   const crLoss = crRecs.reduce((s,r)=>s+crLossFor(r),0);
+  const crAutoCount = crRecs.filter(r => d.returnCostsAuto && d.returnCostsAuto[r.suborderNo]).length;
+  const crDefaultCount = crCount - crAutoCount;
   const netProfit = profit - gst - rtoLoss - crLoss;
   const settlement = payments.reduce((s,p)=>s+p.finalSettlement,0);
   const allSkuRows = orders.concat(returns);
@@ -891,7 +893,7 @@ function computeStats(d, dateFrom, dateTo){
   const trend = trendMonths.map(m => ({ month:m, sales:byMonth[m].sales, orders:byMonth[m].orders }));
 
   return {
-    totalSale, totalCost, productCost, adsCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss,
+    totalSale, totalCost, productCost, adsCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss, crAutoCount, crDefaultCount,
     netProfit, settlement, orderCount:saleOrders.length, totalOrders:totalOrdersAll, missing, bySubOwner,
     deliveredCount: deliveredAllCount, inProgressCount, dateRange, saleOrders, pendingOrders, pendingAmount,
     cancelledCount, shippedCount, deliveryRate, rtoRate, returnRate, trend,
@@ -1077,7 +1079,9 @@ function renderKpis(stats){
     profit: "sale − cost",
     gst: data.settings.gstPercent + "% of sale",
     rtoLoss: stats.rtoCount + " orders, no loss",
-    crLoss: stats.crCount + " orders",
+    crLoss: stats.crCount
+      ? (stats.crAutoCount + " real, " + stats.crDefaultCount + " est. @ ₹" + data.settings.customerReturnFlatLoss)
+      : "0 orders",
     netProfit: "profit − gst − returns",
   };
   el.innerHTML = KPI_DEFS.map(k => {
@@ -1132,7 +1136,8 @@ function renderReturnsPanel(stats){
         <input id="returnsSearch" placeholder="Search SKU or product" value="${esc(returnsFilter)}" style="padding-left:30px;width:220px;"/>
       </div>
     </div>
-    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">"From Meesho" rows use the real per-order amount from your payment file. Everything else uses the flat default from Settings until a payment file covers that order — edit any value by hand to override it.</div>`;
+    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">"From Meesho" rows use the real per-order amount from your payment file. Everything else uses the flat default from Settings until a payment file covers that order — edit any value by hand to override it.</div>
+    ${(stats.crDefaultCount > 0 && Number(data.settings.customerReturnFlatLoss) === 0) ? `<div class="alert" style="padding:0 18px 14px;font-size:12px;">⚠ Settings → "Customer return – default loss" is set to ₹0, so the ${stats.crDefaultCount} "Default guess" row${stats.crDefaultCount===1?"":"s"} below are counting as ₹0 loss until that payment file is uploaded or you set a real default.</div>` : ""}`;
   if(!stats.crRecs.length){
     el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No customer returns uploaded yet — once you do, each one will show up here with an editable loss amount.</div>`;
     return;
