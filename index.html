@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -128,7 +128,6 @@
     <button class="tabbtn" data-tab="upload"><svg class="icon"><use href="#ic-upload"/></svg>Upload data</button>
     <button class="tabbtn" data-tab="costs"><svg class="icon"><use href="#ic-tag"/></svg>Cost &amp; owners</button>
     <button class="tabbtn" data-tab="stock"><svg class="icon"><use href="#ic-box"/></svg>Stock</button>
-    <button class="tabbtn" data-tab="othercost"><svg class="icon"><use href="#ic-rupee"/></svg>Other costs</button>
     <button class="tabbtn" data-tab="returns"><svg class="icon"><use href="#ic-return"/></svg>Returns</button>
     <button class="tabbtn" data-tab="received"><svg class="icon"><use href="#ic-check"/></svg>Received payment</button>
     <button class="tabbtn" data-tab="pending"><svg class="icon"><use href="#ic-clock"/></svg>Pending payment</button>
@@ -172,10 +171,13 @@
       <div id="rateCard"></div>
     </div>
     <div id="ownerSplit" style="margin-bottom:18px;"></div>
-    <div class="card" style="padding:18px;">
-      <div style="font-size:13px;font-weight:500;">Meesho payout on record</div>
-      <div class="muted" style="font-size:11.5px;margin:5px 0 8px;">Sum of Final Settlement Amount from the payment file — a cross-check against the profit calc above.</div>
-      <div class="display teal tabular" id="settlementVal" style="font-size:20px;font-weight:700;">₹0</div>
+    <div class="cols2">
+      <div class="card" style="padding:18px;">
+        <div style="font-size:13px;font-weight:500;">Meesho payout on record</div>
+        <div class="muted" style="font-size:11.5px;margin:5px 0 8px;">Sum of Final Settlement Amount from the payment file — a cross-check against the profit calc above.</div>
+        <div class="display teal tabular" id="settlementVal" style="font-size:20px;font-weight:700;">₹0</div>
+      </div>
+      <div class="card" id="reconcileCard" style="padding:18px;"></div>
     </div>
   </div>
 
@@ -183,11 +185,11 @@
   <div class="tabpanel" id="panel-upload">
     <div class="card" style="padding:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <div style="font-size:14px;font-weight:600;">Upload your Meesho exports</div>
+        <div style="font-size:14px;font-weight:600;">Upload your 4 Meesho exports</div>
         <button class="btn-ghost danger" id="resetBtn"><svg class="icon"><use href="#ic-trash"/></svg>Reset this business's data</button>
       </div>
       <div class="grid4" id="uploadGrid"></div>
-      <div class="muted" style="font-size:11.5px;margin-top:12px;">Upload as many times as you like — orders and returns already counted (by Sub Order No) are always skipped, so only new ones get added. Nothing leaves your browser.</div>
+      <div class="muted" style="font-size:11.5px;margin-top:12px;">Upload as many times as you like — orders and returns already counted (by Sub Order No) are always skipped, so only new ones get added. The payment file also picks up Ads Cost, Referral Payments and Compensation/Recovery sheets when present, and separates out "unscheduled" settlements that Meesho hasn't paid yet. Nothing leaves your browser.</div>
     </div>
   </div>
 
@@ -207,11 +209,6 @@
   <!-- STOCK -->
   <div class="tabpanel" id="panel-stock">
     <div class="card" id="stockPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- OTHER COSTS -->
-  <div class="tabpanel" id="panel-othercost">
-    <div class="card" id="otherCostPanel" style="padding:0;"></div>
   </div>
 
   <!-- RETURNS -->
@@ -243,7 +240,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
         <div>
           <div style="font-size:13px;">Customer return — default loss</div>
-          <div class="muted" style="font-size:11.5px;">Starting ₹ value for each new customer return (editable per order in Returns tab)</div>
+          <div class="muted" style="font-size:11.5px;">Fallback guess until a payment file covers that order — then the real Meesho amount is filled in automatically (editable per order in Returns tab)</div>
         </div>
         <div>₹ <input type="number" id="crFlatInput" style="width:64px;text-align:right;" class="tabular"/></div>
       </div>
@@ -315,8 +312,9 @@ const dataKey = (o) => "mpp_data_v3_" + o;
 
 function emptyData(){
   return {
-    orders: [], returns: [], payments: [], outstandingPayments: [],
-    costs: {}, returnCosts: {}, stock: {}, otherCosts: [],
+    orders: [], returns: [], payments: [], outstanding: [],
+    adsCostRows: [], referralRows: [], compensationRows: [],
+    costs: {}, returnCosts: {}, returnCostsAuto: {}, stock: {},
     subOwners: ["Owner 1", "Owner 2"],
     settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, lowStockThreshold: 5 }
   };
@@ -335,9 +333,12 @@ function loadOwnerData(owner){
     merged.settings = Object.assign(base.settings, parsed.settings || {});
     merged.subOwners = parsed.subOwners && parsed.subOwners.length===2 ? parsed.subOwners : base.subOwners;
     merged.returnCosts = parsed.returnCosts || {};
+    merged.returnCostsAuto = parsed.returnCostsAuto || {};
     merged.stock = parsed.stock || {};
-    merged.outstandingPayments = parsed.outstandingPayments || [];
-    merged.otherCosts = parsed.otherCosts || [];
+    merged.outstanding = parsed.outstanding || [];
+    merged.adsCostRows = parsed.adsCostRows || [];
+    merged.referralRows = parsed.referralRows || [];
+    merged.compensationRows = parsed.compensationRows || [];
     return merged;
   }catch(e){ return emptyData(); }
 }
@@ -347,6 +348,10 @@ function saveOwnerData(owner, data){ try{ localStorage.setItem(dataKey(owner), J
 const SB_URL_KEY = "mpp_supabase_url";
 const SB_KEY_KEY = "mpp_supabase_key";
 const SB_DISABLED_KEY = "mpp_supabase_disabled";
+// Embedded defaults so this dashboard auto-connects for anyone who opens
+// the deployed link — no manual setup needed. A per-browser override
+// (entered in Settings) still takes priority if ever set, and Disconnect
+// lets this one browser opt out of cloud sync entirely.
 const DEFAULT_SUPABASE_URL = "https://nvkwipdfurzhcqpginfy.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_Rg4K-nXqHvteC_y1X2FBEQ_KSsUndo-";
 let sbClient = null;
@@ -370,6 +375,8 @@ function setSyncStatus(text, isError){
   el.style.color = isError ? "var(--alert)" : (sbClient ? "var(--teal)" : "var(--muted)");
 }
 
+// Push the in-memory `data` for the given owner up to Supabase in the
+// background. Never blocks the UI — local save + render already happened.
 async function pushToCloud(owner, payload){
   if(!sbClient) return;
   setSyncStatus("Syncing...");
@@ -385,6 +392,9 @@ async function pushToCloud(owner, payload){
   }
 }
 
+// Fetch the latest data for an owner from Supabase, in the background.
+// If found, replaces the in-memory `data` and re-renders — this is what
+// makes a second device/browser catch up automatically.
 async function refreshFromCloud(owner){
   if(!sbClient) return;
   try{
@@ -397,11 +407,14 @@ async function refreshFromCloud(owner){
       merged.settings = Object.assign(base.settings, row.data.settings || {});
       merged.subOwners = row.data.subOwners && row.data.subOwners.length===2 ? row.data.subOwners : base.subOwners;
       merged.returnCosts = row.data.returnCosts || {};
+      merged.returnCostsAuto = row.data.returnCostsAuto || {};
       merged.stock = row.data.stock || {};
-      merged.outstandingPayments = row.data.outstandingPayments || [];
-      merged.otherCosts = row.data.otherCosts || [];
+      merged.outstanding = row.data.outstanding || [];
+      merged.adsCostRows = row.data.adsCostRows || [];
+      merged.referralRows = row.data.referralRows || [];
+      merged.compensationRows = row.data.compensationRows || [];
       data = merged;
-      saveOwnerData(owner, data);
+      saveOwnerData(owner, data); // keep local cache in step
       render();
       setSyncStatus("Synced " + new Date().toLocaleTimeString());
     } else {
@@ -413,12 +426,21 @@ async function refreshFromCloud(owner){
   }
 }
 
+// Fetch the real list of businesses that exist in Supabase (every row in
+// business_data is one business) — without this, a browser that has never
+// used this dashboard before only knows about a locally-invented default
+// name ("My Store"), which is why someone opening a shared link saw all
+// zeros: they were looking at their own empty "My Store", not the sender's
+// actual business.
 async function fetchOwnersFromCloud(){
   if(!sbClient) return;
   try{
     const { data: rows, error } = await sbClient.from("business_data").select("business");
     if(error) throw error;
     if(!rows || !rows.length){
+      // Nothing in the cloud table yet — this is the very first sync since
+      // credentials were embedded, so push this browser's existing local
+      // data up as the seed (safe: nothing to overwrite).
       pushToCloud(currentOwner, data);
       return;
     }
@@ -558,7 +580,7 @@ async function applyCostSheet(file){
   return { updated, skipped };
 }
 
-// ---------- stock (all-time, independent of the dashboard date filter) ----------
+// ---------- stock (all-time sold, independent of the dashboard date filter) ----------
 function computeSoldBySku(d){
   const crSuborderSet = new Set(d.returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
   const sold = {};
@@ -601,23 +623,114 @@ async function applyStockSheet(file){
 async function parsePaymentsXlsx(file){
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type:"array" });
+  const received = [];
+  const outstanding = [];
+  const returnLossRows = [];
   const sheet = wb.Sheets["Order Payments"];
-  if(!sheet) return [];
+  if(sheet){
+    const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
+    const headerIdx = rows.findIndex(r => cleanKey(r[0]) === "Sub Order No");
+    if(headerIdx !== -1){
+      const headers = rows[headerIdx].map(h => cleanKey(h));
+      const subOrderIdx = headers.indexOf("Sub Order No");
+      const settlementIdx = headers.indexOf("Final Settlement Amount");
+      const statusIdx = headers.indexOf("Live Order Status");
+      const payDateIdx = headers.indexOf("Payment Date");
+      for(let i = headerIdx+2; i < rows.length; i++){
+        const row = rows[i];
+        const subOrderNo = cleanKey(row[subOrderIdx]);
+        if(!subOrderNo || !/^\d+_\d+$/.test(subOrderNo)) continue;
+        const finalSettlement = parseFloat(String(row[settlementIdx] ?? "0"))||0;
+        const liveStatus = cleanKey(row[statusIdx]);
+        const payDateRaw = cleanKey(row[payDateIdx]).toLowerCase();
+        const rec = { subOrderNo, finalSettlement, liveStatus };
+        // Meesho marks a row's Payment Date as "unscheduled" (or leaves it blank)
+        // when the payout hasn't actually happened yet — those are NOT money
+        // received, so they're kept separate from `received` to avoid counting
+        // expected-but-unpaid amounts as settled.
+        if(!payDateRaw || payDateRaw === "unscheduled"){
+          outstanding.push(rec);
+        } else {
+          received.push(rec);
+        }
+        // For a "Return" row, Final Settlement Amount already nets the Return
+        // Shipping Charge (and any other recovery deducted on that order) —
+        // it's the real, order-specific cost of that return. Capture it so we
+        // can auto-fill the Returns tab's per-order loss with the actual
+        // Meesho number instead of the flat default guess.
+        if(liveStatus.toLowerCase() === "return" && finalSettlement < 0){
+          returnLossRows.push({ subOrderNo, amount: Math.abs(finalSettlement) });
+        }
+      }
+    }
+  }
+  return {
+    received, outstanding, returnLossRows,
+    adsCostRows: parseAdsCostSheet(wb),
+    referralRows: parseReferralSheet(wb),
+    compensationRows: parseCompensationSheet(wb),
+  };
+}
+
+// Meesho's Ads Cost / Referral Payments / Compensation & Recovery sheets all
+// share the same shape: a merged title row, a header row, a formula-key row
+// (single letters like A/B/C referencing the column formulas), then either
+// data rows or a single "No data is available for these dates." sentinel row.
+function readSectionRows(wb, sheetName, headerFirstCell){
+  const sheet = wb.Sheets[sheetName];
+  if(!sheet) return { headers: [], rows: [] };
   const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
-  const headerIdx = rows.findIndex(r => cleanKey(r[0]) === "Sub Order No");
-  if(headerIdx === -1) return [];
+  const headerIdx = rows.findIndex(r => cleanKey(r[0]) === headerFirstCell);
+  if(headerIdx === -1) return { headers: [], rows: [] };
   const headers = rows[headerIdx].map(h => cleanKey(h));
-  const subOrderIdx = headers.indexOf("Sub Order No");
-  const settlementIdx = headers.indexOf("Final Settlement Amount");
-  const statusIdx = headers.indexOf("Live Order Status");
   const out = [];
   for(let i = headerIdx+2; i < rows.length; i++){
     const row = rows[i];
-    const subOrderNo = cleanKey(row[subOrderIdx]);
-    if(!subOrderNo || !/^\d+_\d+$/.test(subOrderNo)) continue;
-    out.push({ subOrderNo, finalSettlement: parseFloat(String(row[settlementIdx] ?? "0"))||0, liveStatus:cleanKey(row[statusIdx]) });
+    const firstCell = cleanKey(row[0]);
+    if(!firstCell || firstCell.toLowerCase().startsWith("no data is available")) continue;
+    out.push(row);
   }
-  return out;
+  return { headers, rows: out };
+}
+function parseAdsCostSheet(wb){
+  const { headers, rows } = readSectionRows(wb, "Ads Cost", "Deduction Duration");
+  if(!rows.length) return [];
+  const dateIdx = headers.indexOf("Deduction Date");
+  const campaignIdx = headers.indexOf("Campaign ID");
+  const totalIdx = headers.indexOf("Total Ads Cost");
+  return rows.map(row => ({
+    deductionDate: cleanKey(row[dateIdx]),
+    campaignId: cleanKey(row[campaignIdx]),
+    totalAdsCost: parseFloat(String(row[totalIdx] ?? "0")) || 0,
+  }));
+}
+function parseReferralSheet(wb){
+  const { headers, rows } = readSectionRows(wb, "Referral Payments", "Reward Id");
+  if(!rows.length) return [];
+  const idIdx = headers.indexOf("Reward Id");
+  const dateIdx = headers.indexOf("Payment Date");
+  const reasonIdx = headers.indexOf("Reason");
+  const amtIdx = headers.indexOf("Net Referral Amount");
+  return rows.map(row => ({
+    rewardId: cleanKey(row[idIdx]),
+    paymentDate: cleanKey(row[dateIdx]),
+    reason: cleanKey(row[reasonIdx]),
+    netAmount: parseFloat(String(row[amtIdx] ?? "0")) || 0,
+  }));
+}
+function parseCompensationSheet(wb){
+  const { headers, rows } = readSectionRows(wb, "Compensation and Recovery", "Date");
+  if(!rows.length) return [];
+  const dateIdx = headers.indexOf("Date");
+  const programIdx = headers.indexOf("Program Name");
+  const reasonIdx = headers.indexOf("Reason");
+  const amtIdx = headers.indexOf("Amount (inc GST) INR");
+  return rows.map(row => ({
+    date: cleanKey(row[dateIdx]),
+    program: cleanKey(row[programIdx]),
+    reason: cleanKey(row[reasonIdx]),
+    amount: parseFloat(String(row[amtIdx] ?? "0")) || 0,
+  }));
 }
 
 // ---------- merge (dedupe) ----------
@@ -645,6 +758,9 @@ function crLossFor(rec){
 }
 
 function computeStats(d, dateFrom, dateTo){
+  // Optional date-range scoping (dateFrom/dateTo are "yyyy-mm-dd" strings,
+  // same format Meesho's Order Date column and <input type=date> both use,
+  // so plain string comparison works).
   let orders = d.orders;
   if(dateFrom || dateTo){
     orders = orders.filter(o => {
@@ -663,6 +779,10 @@ function computeStats(d, dateFrom, dateTo){
   if(dateFrom || dateTo){
     payments = payments.filter(p => orderSuborderSet.has(p.subOrderNo));
   }
+  let outstandingRows = d.outstanding;
+  if(dateFrom || dateTo){
+    outstandingRows = outstandingRows.filter(o => orderSuborderSet.has(o.subOrderNo));
+  }
 
   const crSuborderSet = new Set(returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
   const saleOrders = orders.filter(o => o.status === "DELIVERED" && !crSuborderSet.has(o.subOrderNo));
@@ -670,17 +790,7 @@ function computeStats(d, dateFrom, dateTo){
   const totalSale = saleOrders.reduce((s,o)=>s+o.saleAmount,0);
   const productCost = saleOrders.reduce((s,o)=>s+o.qty*costOf(o.sku),0);
   const adsCost = Number(d.settings.adsCost) || 0;
-  let extraEntries = d.otherCosts || [];
-  if(dateFrom || dateTo){
-    extraEntries = extraEntries.filter(e => {
-      if(!e.date) return false;
-      if(dateFrom && e.date < dateFrom) return false;
-      if(dateTo && e.date > dateTo) return false;
-      return true;
-    });
-  }
-  const extraCostTotal = extraEntries.reduce((s,e)=>s+(Number(e.amount)||0),0);
-  const totalCost = productCost + adsCost + extraCostTotal;
+  const totalCost = productCost + adsCost;
   const profit = totalSale - totalCost;
   const gstPct = d.settings.gstPercent;
   const gst = totalSale * (gstPct/(100+gstPct));
@@ -696,20 +806,23 @@ function computeStats(d, dateFrom, dateTo){
   const missing = Array.from(new Set(allSkuRows.filter(r=>!(r.sku in d.costs) || (Number(d.costs[r.sku].cost)||0)===0).map(r=>r.sku).filter(Boolean)));
 
   const paymentSuborderSet = new Set(payments.map(p=>p.subOrderNo));
-  let outstandingPayments = d.outstandingPayments;
-  if(dateFrom || dateTo){
-    outstandingPayments = outstandingPayments.filter(p => orderSuborderSet.has(p.subOrderNo));
-  }
-  const outstandingMap = new Map(outstandingPayments.map(p => [p.subOrderNo, p.finalSettlement]));
-  const pendingOrders = saleOrders
-    .filter(o => !paymentSuborderSet.has(o.subOrderNo))
-    .map(o => ({
-      ...o,
-      estimatedAmount: outstandingMap.has(o.subOrderNo) ? outstandingMap.get(o.subOrderNo) : o.saleAmount,
-      isEstimate: !outstandingMap.has(o.subOrderNo),
-    }));
-  const pendingAmount = pendingOrders.reduce((s,o)=>s+o.estimatedAmount,0);
+  const outstandingMap = {};
+  outstandingRows.forEach(o => { outstandingMap[o.subOrderNo] = o.finalSettlement; });
+  const pendingOrders = saleOrders.filter(o => !paymentSuborderSet.has(o.subOrderNo)).map(o => {
+    const meeshoAmount = outstandingMap[o.subOrderNo];
+    return Object.assign({}, o, {
+      expectedAmount: meeshoAmount !== undefined ? meeshoAmount : o.saleAmount,
+      isEstimate: meeshoAmount === undefined,
+    });
+  });
+  const pendingAmount = pendingOrders.reduce((s,o)=>s+o.expectedAmount,0);
 
+  const adsCostFromFile = d.adsCostRows.reduce((s,r)=>s+r.totalAdsCost,0);
+  const referralTotal = d.referralRows.reduce((s,r)=>s+r.netAmount,0);
+  const compensationTotal = d.compensationRows.reduce((s,r)=>s+r.amount,0);
+  const outstandingTotal = outstandingRows.reduce((s,o)=>s+o.finalSettlement,0);
+
+  // per sub-owner totals + a flat performance-table version of the same
   const bySubOwner = {};
   d.subOwners.forEach(o => bySubOwner[o] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 });
   saleOrders.forEach(o => {
@@ -719,18 +832,13 @@ function computeStats(d, dateFrom, dateTo){
     bySubOwner[owner].cost += o.qty*costOf(o.sku);
     bySubOwner[owner].orders += 1;
     if(paymentSuborderSet.has(o.subOrderNo)) bySubOwner[owner].received += o.saleAmount;
-    else bySubOwner[owner].pending += (outstandingMap.has(o.subOrderNo) ? outstandingMap.get(o.subOrderNo) : o.saleAmount);
+    else bySubOwner[owner].pending += o.saleAmount;
   });
   crRecs.forEach(r => {
     const owner = ownerOf(r.sku);
     if(!bySubOwner[owner]) bySubOwner[owner] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 };
     bySubOwner[owner].crLoss += crLossFor(r);
     bySubOwner[owner].returns += 1;
-  });
-  extraEntries.forEach(e => {
-    const amt = Number(e.amount) || 0;
-    if(bySubOwner[e.owner]) bySubOwner[e.owner].cost += amt;
-    else d.subOwners.forEach(o => { bySubOwner[o].cost += amt / d.subOwners.length; });
   });
   Object.keys(bySubOwner).forEach(o => {
     const s = bySubOwner[o];
@@ -739,6 +847,7 @@ function computeStats(d, dateFrom, dateTo){
     s.netProfit = s.profit - s.gst - s.crLoss;
   });
 
+  // status breakdown (based on ALL orders in range, cancelled included)
   const cancelledCount = orders.filter(o => o.status === "CANCELLED").length;
   const nonCancelled = orders.filter(o => o.status !== "CANCELLED");
   const shippedCount = orders.filter(o => o.status === "SHIPPED").length;
@@ -754,10 +863,11 @@ function computeStats(d, dateFrom, dateTo){
   const dates = d.orders.map(o=>o.orderDate).filter(Boolean).sort();
   const dateRange = dates.length ? { from: dates[0], to: dates[dates.length-1] } : null;
 
+  // monthly Sales & Orders trend (last 6 months of data available)
   const byMonth = {};
   saleOrders.forEach(o => {
     if(!o.orderDate) return;
-    const month = o.orderDate.slice(0,7);
+    const month = o.orderDate.slice(0,7); // yyyy-mm
     if(!byMonth[month]) byMonth[month] = { sales:0, orders:0 };
     byMonth[month].sales += o.saleAmount;
     byMonth[month].orders += 1;
@@ -769,7 +879,8 @@ function computeStats(d, dateFrom, dateTo){
     totalSale, totalCost, productCost, adsCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss,
     netProfit, settlement, orderCount:saleOrders.length, totalOrders:totalOrdersAll, missing, bySubOwner,
     deliveredCount: deliveredAllCount, inProgressCount, dateRange, saleOrders, pendingOrders, pendingAmount,
-    cancelledCount, shippedCount, deliveryRate, rtoRate, returnRate, trend, extraCostTotal
+    cancelledCount, shippedCount, deliveryRate, rtoRate, returnRate, trend,
+    adsCostFromFile, referralTotal, compensationTotal, outstandingTotal
   };
 }
 
@@ -815,8 +926,7 @@ const SLOTS = [
   { key:"orders", label:"Orders export", hint:"Orders_<dates>.csv" },
   { key:"completed", label:"Completed / Delivered", hint:"completed_delivered...csv" },
   { key:"intransit", label:"Intransit (RTO)", hint:"intransit...csv" },
-  { key:"payments", label:"Payment file", hint:"...PAYMENT_FILE...xlsx" },
-  { key:"outstanding", label:"Outstanding payment", hint:"...OUTSTANDING_PAYMENT...xlsx" },
+  { key:"payments", label:"Payment file", hint:"...PAYMENT_FILE... / ...ADS_REFERRAL...xlsx" },
 ];
 
 function renderUploadGrid(){
@@ -829,7 +939,7 @@ function renderUploadGrid(){
     btn.innerHTML = `<svg class="icon" style="width:20px;height:20px;color:var(--muted);"><use href="#ic-upload"/></svg><span style="font-size:12.5px;text-align:center;">${slot.label}</span><span class="muted" style="font-size:10px;text-align:center;">${slot.hint}</span>`;
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = (slot.key === "payments" || slot.key === "outstanding") ? ".xlsx" : ".csv";
+    input.accept = slot.key === "payments" ? ".xlsx" : ".csv";
     input.style.display = "none";
     const msg = document.createElement("div");
     msg.style.fontSize = "11px";
@@ -847,22 +957,48 @@ function renderUploadGrid(){
           const recs = await parseOrdersCsv(file);
           const r = mergeBy(data.orders, recs, x=>x.subOrderNo);
           data.orders = r.merged; added = r.added; total = recs.length;
+          msg.className = "teal";
+          msg.textContent = added + " new rows added" + ((total-added) ? " (" + (total-added) + " already counted)" : "");
         } else if(slot.key === "completed" || slot.key === "intransit"){
           const recs = await parseReturnsCsv(file);
           const r = mergeBy(data.returns, recs, x=>x.suborderNo);
           data.returns = r.merged; added = r.added; total = recs.length;
+          msg.className = "teal";
+          msg.textContent = added + " new rows added" + ((total-added) ? " (" + (total-added) + " already counted)" : "");
         } else if(slot.key === "payments"){
-          const recs = await parsePaymentsXlsx(file);
-          const r = mergeBy(data.payments, recs, x=>x.subOrderNo);
-          data.payments = r.merged; added = r.added; total = recs.length;
-        } else if(slot.key === "outstanding"){
-          const recs = await parsePaymentsXlsx(file);
-          const r = mergeBy(data.outstandingPayments, recs, x=>x.subOrderNo);
-          data.outstandingPayments = r.merged; added = r.added; total = recs.length;
+          const parsed = await parsePaymentsXlsx(file);
+          const rReceived = mergeBy(data.payments, parsed.received, x=>x.subOrderNo);
+          data.payments = rReceived.merged;
+          const rOutstanding = mergeBy(data.outstanding, parsed.outstanding, x=>x.subOrderNo);
+          data.outstanding = rOutstanding.merged;
+          const rAds = mergeBy(data.adsCostRows, parsed.adsCostRows, x=>x.deductionDate+"|"+x.campaignId);
+          data.adsCostRows = rAds.merged;
+          const rRef = mergeBy(data.referralRows, parsed.referralRows, x=>x.rewardId || (x.paymentDate+"|"+x.reason+"|"+x.netAmount));
+          data.referralRows = rRef.merged;
+          const rComp = mergeBy(data.compensationRows, parsed.compensationRows, x=>x.date+"|"+x.program+"|"+x.reason+"|"+x.amount);
+          data.compensationRows = rComp.merged;
+          // Auto-fill the Returns tab's per-order loss with the real Meesho
+          // number for that order, as long as the seller hasn't manually
+          // overridden it — a manual edit always wins over the file.
+          let autoFilled = 0;
+          parsed.returnLossRows.forEach(r => {
+            const isUntouched = data.returnCosts[r.subOrderNo] === undefined || data.returnCostsAuto[r.subOrderNo];
+            if(isUntouched){
+              data.returnCosts[r.subOrderNo] = r.amount;
+              data.returnCostsAuto[r.subOrderNo] = true;
+              autoFilled++;
+            }
+          });
+          msg.className = "teal";
+          const parts = [];
+          if(rReceived.added) parts.push(rReceived.added + " settled");
+          if(rOutstanding.added) parts.push(rOutstanding.added + " unscheduled");
+          if(rAds.added) parts.push(rAds.added + " ads cost");
+          if(rRef.added) parts.push(rRef.added + " referral");
+          if(rComp.added) parts.push(rComp.added + " compensation/recovery");
+          if(autoFilled) parts.push(autoFilled + " return loss amounts auto-filled");
+          msg.textContent = parts.length ? "Added: " + parts.join(", ") : "No new rows found (already counted)";
         }
-        msg.className = "teal";
-        const skipped = total - added;
-        msg.textContent = added + " new rows added" + (skipped ? " (" + skipped + " already counted)" : "");
         persist();
       }catch(e){
         msg.className = "alert";
@@ -977,25 +1113,31 @@ function renderReturnsPanel(stats){
         <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
         <input id="returnsSearch" placeholder="Search SKU or product" value="${esc(returnsFilter)}" style="padding-left:30px;width:220px;"/>
       </div>
-    </div>`;
+    </div>
+    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">"From Meesho" rows use the real per-order amount from your payment file. Everything else uses the flat default from Settings until a payment file covers that order — edit any value by hand to override it.</div>`;
   if(!stats.crRecs.length){
     el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No customer returns uploaded yet — once you do, each one will show up here with an editable loss amount.</div>`;
     return;
   }
   const rows = filtered.map(r => {
     const val = data.returnCosts[r.suborderNo] !== undefined ? data.returnCosts[r.suborderNo] : data.settings.customerReturnFlatLoss;
+    const isAuto = !!data.returnCostsAuto[r.suborderNo];
+    const sourceBadge = isAuto
+      ? `<span class="badge" style="background:rgba(21,115,71,0.14);color:var(--teal);">From Meesho</span>`
+      : `<span class="badge">Default guess</span>`;
     return `<tr>
       <td class="muted tabular" style="white-space:nowrap;">${esc(r.suborderNo)}</td>
       <td>${esc(r.productName)}</td>
       <td class="muted tabular">${esc(r.sku)}</td>
       <td style="text-align:right;"><input type="number" data-suborder="${esc(r.suborderNo)}" class="crCostInput tabular" style="width:80px;text-align:right;" value="${val}"/></td>
+      <td>${sourceBadge}</td>
     </tr>`;
   }).join("");
   el.innerHTML = header + `
     <div style="border-top:1px solid var(--line);max-height:420px;overflow-y:auto;">
       <table>
-        <thead><tr><th>Suborder</th><th>Product</th><th>SKU</th><th style="text-align:right;">Loss (₹)</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
+        <thead><tr><th>Suborder</th><th>Product</th><th>SKU</th><th style="text-align:right;">Loss (₹)</th><th>Source</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
       </table>
     </div>`;
   document.getElementById("returnsSearch").addEventListener("input", (e) => {
@@ -1006,6 +1148,7 @@ function renderReturnsPanel(stats){
     inp.addEventListener("change", (e) => {
       const suborder = e.target.getAttribute("data-suborder");
       data.returnCosts[suborder] = parseFloat(e.target.value) || 0;
+      delete data.returnCostsAuto[suborder];
       persist();
     });
   });
@@ -1057,7 +1200,7 @@ function renderOwnerPerfTable(stats){
   const rows = data.subOwners.map(name => {
     const s = stats.bySubOwner[name] || {orders:0,sale:0,gst:0,received:0,pending:0,returns:0};
     return `<tr>
-      <td><span class="badge" style="background:rgba(36,84,199,0.14);color:var(--gold);">${esc(name)}</span></td>
+      <td><span class="badge" style="background:rgba(242,183,5,0.15);color:var(--gold);">${esc(name)}</span></td>
       <td class="tabular">${s.orders}</td>
       <td class="tabular">${fmt(s.sale)}</td>
       <td class="tabular">${fmt(s.gst)}</td>
@@ -1131,7 +1274,7 @@ function renderPendingPanel(stats){
         <input id="pendingSearch" placeholder="Search Sub Order No, SKU or product" value="${esc(pendingFilter)}" style="padding-left:30px;width:250px;"/>
       </div>
     </div>
-    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Amount shown is Meesho's own outstanding-file estimate where available (marked "Meesho est."); otherwise it's the raw sale amount as a rough placeholder. Upload the Outstanding payment file for more accurate figures, and a newer Payment file to move these into Received.</div>`;
+    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Rows marked "Meesho figure" use the unscheduled settlement amount from your payment file; the rest are estimated from sale amount since no such record was found yet.</div>`;
   if(!stats.saleOrders.length){
     el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No delivered orders yet.</div>`;
     return;
@@ -1140,13 +1283,13 @@ function renderPendingPanel(stats){
       <td class="muted tabular" style="white-space:nowrap;">${esc(o.subOrderNo)}</td>
       <td>${esc(o.productName)}</td>
       <td class="muted tabular">${esc(o.sku)}</td>
-      <td style="text-align:right;" class="gold tabular">${fmt(o.estimatedAmount)}</td>
-      <td style="text-align:right;">${o.isEstimate ? '<span class="badge">rough</span>' : '<span class="badge" style="color:var(--teal);">Meesho est.</span>'}</td>
+      <td>${o.isEstimate ? `<span class="badge">Estimate</span>` : `<span class="badge" style="background:rgba(36,84,199,0.14);color:var(--gold);">Meesho figure</span>`}</td>
+      <td style="text-align:right;" class="gold tabular">${fmt(o.expectedAmount)}</td>
     </tr>`).join("");
   el.innerHTML = header + `
     <div style="border-top:1px solid var(--line);max-height:400px;overflow-y:auto;">
       <table>
-        <thead><tr><th>Sub Order No</th><th>Product</th><th>SKU</th><th style="text-align:right;">Amount</th><th style="text-align:right;">Source</th></tr></thead>
+        <thead><tr><th>Sub Order No</th><th>Product</th><th>SKU</th><th>Source</th><th style="text-align:right;">Expected amount</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">All caught up — nothing pending</td></tr>`}</tbody>
       </table>
     </div>`;
@@ -1280,10 +1423,6 @@ function renderStockPanel(){
     </div>
     <div id="stockSheetMsg" class="muted" style="padding:0 18px 10px;font-size:11.5px;"></div>
     <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Set the current stock you're holding for each SKU. "Sold (all time)" is a read-only tally from your delivered orders, for reference while you count.</div>`;
-  if(!map.size){
-    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No SKUs yet — upload an Orders file first, then set each SKU's stock here.</div>`;
-    return;
-  }
   let tableRows = rows.map(([sku, name]) => {
     const rec = data.stock[sku];
     const qty = rec ? rec.qty : "";
@@ -1342,144 +1481,6 @@ function renderStockPanel(){
       data.stock[sku] = { qty: val };
       persist();
     });
-  });
-}
-
-// ---------- other costs (general expense entries) ----------
-let otherCostDraft = { date:"", desc:"", amount:"", owner:"Shared" };
-let otherCostMsg = null;
-
-function normalizeDate(v){
-  if(v === "" || v === undefined || v === null) return "";
-  if(typeof v === "number"){
-    return new Date(Math.round((v - 25569) * 86400 * 1000)).toISOString().slice(0,10);
-  }
-  const s = cleanKey(v);
-  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-  if(m) return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
-  return s;
-}
-function otherCostKey(e){ return [e.date, String(e.desc||"").toLowerCase(), Number(e.amount)||0, e.owner].join("|"); }
-function downloadOtherCostSheet(){
-  const lines = [["Date","Description","Amount","Owner"]];
-  data.otherCosts.forEach(e => lines.push([e.date||"", e.desc||"", e.amount, e.owner||"Shared"]));
-  if(!data.otherCosts.length) lines.push(["2026-09-01","Packaging material","500","Shared"]);
-  const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type:"text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = currentOwner.replace(/\s+/g,"_") + "_other_costs.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-async function applyOtherCostSheet(file){
-  const rows = await readRowsAny(file);
-  const seen = new Set(data.otherCosts.map(otherCostKey));
-  let added = 0, skipped = 0;
-  for(const row of rows){
-    const amount = parseFloat(findCol(row, ["amount", "cost", "price"]));
-    const desc = cleanKey(findCol(row, ["description", "desc", "category", "item", "name"]));
-    if(!(amount > 0) || !desc){ skipped++; continue; }
-    const ownerRaw = cleanKey(findCol(row, ["owner"]));
-    const matched = data.subOwners.find(o => o.toLowerCase() === ownerRaw.toLowerCase());
-    const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2,7), date: normalizeDate(findCol(row, ["date"])), desc, amount, owner: matched || "Shared" };
-    const k = otherCostKey(entry);
-    if(seen.has(k)){ skipped++; continue; }
-    seen.add(k);
-    data.otherCosts.push(entry);
-    added++;
-  }
-  return { added, skipped };
-}
-
-function renderOtherCostPanel(stats){
-  const el = document.getElementById("otherCostPanel");
-  const ownerOptions = (sel) => data.subOwners.concat(["Shared"]).map(o => `<option value="${esc(o)}" ${o===sel?"selected":""}>${esc(o)}</option>`).join("");
-  const entries = data.otherCosts.slice().sort((a,b) => (b.date||"").localeCompare(a.date||""));
-  const allTotal = data.otherCosts.reduce((s,e)=>s+(Number(e.amount)||0),0);
-  const filtered = (dateFrom || dateTo) ? ` · ${fmt(stats.extraCostTotal)} in the selected date range` : "";
-  const msgHtml = otherCostMsg ? `<div class="${otherCostMsg.ok?"teal":"alert"}" style="padding:0 18px 10px;font-size:11.5px;">${esc(otherCostMsg.text)}</div>` : "";
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:14px;font-weight:600;">Other costs <span class="muted" style="font-weight:400;font-size:12px;">(${data.otherCosts.length} entries)</span></div>
-        <div class="alert tabular" style="font-size:18px;font-weight:700;margin-top:4px;">${fmt(allTotal)}<span class="muted" style="font-size:11.5px;font-weight:400;font-family:Inter,sans-serif;">${filtered}</span></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <button class="btn-ghost" id="downloadOtherCostBtn"><svg class="icon"><use href="#ic-download"/></svg>Download sheet</button>
-        <button class="btn-ghost" id="uploadOtherCostBtn"><svg class="icon"><use href="#ic-upload"/></svg>Bulk update from Excel</button>
-        <input type="file" id="otherCostFile" accept=".csv,.xlsx,.xls" style="display:none;"/>
-      </div>
-    </div>
-    ${msgHtml}
-    <div class="muted" style="padding:0 18px 12px;font-size:11.5px;">Packaging, salaries, rent, shipping top-ups — any running expense that isn't tied to one SKU. These are added to Total Cost (so they reduce Profit and Net Profit) and split into the owner you pick; "Shared" splits equally between both owners. Uploading the same rows twice is safe — duplicates are skipped.</div>
-    <div style="padding:12px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface2);display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-      <div><div class="muted" style="font-size:11px;margin-bottom:4px;">Date</div><input type="date" id="ocDate" value="${esc(otherCostDraft.date)}"/></div>
-      <div style="flex:1;min-width:160px;"><div class="muted" style="font-size:11px;margin-bottom:4px;">Description</div><input type="text" id="ocDesc" placeholder="e.g. Packaging material" value="${esc(otherCostDraft.desc)}" style="width:100%;"/></div>
-      <div><div class="muted" style="font-size:11px;margin-bottom:4px;">Amount (₹)</div><input type="number" id="ocAmount" value="${esc(otherCostDraft.amount)}" style="width:100px;text-align:right;" placeholder="0"/></div>
-      <div><div class="muted" style="font-size:11px;margin-bottom:4px;">Owner</div><select id="ocOwner">${ownerOptions(otherCostDraft.owner)}</select></div>
-      <button class="btn-gold" id="ocAddBtn">Add cost</button>
-    </div>`;
-  const rows = entries.map(e => `<tr>
-      <td><input type="date" data-id="${esc(e.id)}" data-field="date" class="ocEdit" value="${esc(e.date||"")}"/></td>
-      <td><input type="text" data-id="${esc(e.id)}" data-field="desc" class="ocEdit" value="${esc(e.desc||"")}" style="width:100%;min-width:140px;"/></td>
-      <td><select data-id="${esc(e.id)}" data-field="owner" class="ocEdit">${ownerOptions(e.owner||"Shared")}</select></td>
-      <td style="text-align:right;"><input type="number" data-id="${esc(e.id)}" data-field="amount" class="ocEdit tabular" value="${esc(e.amount)}" style="width:100px;text-align:right;"/></td>
-      <td style="text-align:right;"><button class="btn-ghost danger ocDel" data-id="${esc(e.id)}" title="Delete"><svg class="icon"><use href="#ic-trash"/></svg></button></td>
-    </tr>`).join("");
-  el.innerHTML = header + `
-    <div style="max-height:440px;overflow-y:auto;overflow-x:auto;">
-      <table>
-        <thead><tr><th>Date</th><th>Description</th><th>Owner</th><th style="text-align:right;">Amount (₹)</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No other costs yet — add one above or bulk upload an Excel sheet.</td></tr>`}</tbody>
-      </table>
-    </div>`;
-
-  const bindDraft = (id, key) => document.getElementById(id).addEventListener("input", (e) => { otherCostDraft[key] = e.target.value; });
-  bindDraft("ocDate","date"); bindDraft("ocDesc","desc"); bindDraft("ocAmount","amount"); bindDraft("ocOwner","owner");
-  document.getElementById("ocAddBtn").addEventListener("click", () => {
-    const amount = parseFloat(otherCostDraft.amount);
-    const desc = otherCostDraft.desc.trim();
-    if(!desc || !(amount > 0)){ otherCostMsg = { ok:false, text:"Enter a description and an amount greater than 0." }; renderOtherCostPanel(stats); return; }
-    data.otherCosts.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,7), date: otherCostDraft.date, desc, amount, owner: otherCostDraft.owner || "Shared" });
-    otherCostDraft = { date: otherCostDraft.date, desc:"", amount:"", owner: otherCostDraft.owner };
-    otherCostMsg = { ok:true, text:"Cost added." };
-    persist();
-  });
-  el.querySelectorAll(".ocEdit").forEach(inp => {
-    inp.addEventListener("change", (e) => {
-      const entry = data.otherCosts.find(x => x.id === e.target.getAttribute("data-id"));
-      if(!entry) return;
-      const field = e.target.getAttribute("data-field");
-      entry[field] = field === "amount" ? (parseFloat(e.target.value) || 0) : e.target.value;
-      otherCostMsg = null;
-      persist();
-    });
-  });
-  el.querySelectorAll(".ocDel").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      const id = e.currentTarget.getAttribute("data-id");
-      data.otherCosts = data.otherCosts.filter(x => x.id !== id);
-      otherCostMsg = { ok:true, text:"Cost deleted." };
-      persist();
-    });
-  });
-  document.getElementById("downloadOtherCostBtn").addEventListener("click", downloadOtherCostSheet);
-  document.getElementById("uploadOtherCostBtn").addEventListener("click", () => document.getElementById("otherCostFile").click());
-  document.getElementById("otherCostFile").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if(!file) return;
-    try{
-      const { added, skipped } = await applyOtherCostSheet(file);
-      otherCostMsg = { ok:true, text:`${added} cost${added===1?"":"s"} added` + (skipped ? `, ${skipped} skipped (duplicate or missing description/amount)` : "") };
-      persist();
-    }catch(err){
-      otherCostMsg = { ok:false, text: err.message || "Could not read this file" };
-      renderOtherCostPanel(stats);
-    }
   });
 }
 
@@ -1572,7 +1573,6 @@ function exportSummaryCsv(stats){
     ["Total Sale", stats.totalSale.toFixed(2)],
     ["Total Cost (incl. ads)", stats.totalCost.toFixed(2)],
     ["Ads Cost", stats.adsCost.toFixed(2)],
-    ["Other costs (entries)", stats.extraCostTotal.toFixed(2)],
     ["Profit", stats.profit.toFixed(2)],
     ["GST (" + data.settings.gstPercent + "%)", stats.gst.toFixed(2)],
     ["RTO count", stats.rtoCount],
@@ -1608,8 +1608,8 @@ function render(){
     () => renderPendingPanel(stats),
     () => renderCostPanel(stats),
     () => renderStockPanel(),
-    () => renderOtherCostPanel(stats),
     () => renderCharts(stats),
+    () => renderReconcileCard(stats),
   ];
   safeCalls.forEach(fn => {
     try{ fn(); }catch(err){ console.error("Dashboard section failed to render:", err); }
@@ -1647,7 +1647,6 @@ document.getElementById("owner1Name").addEventListener("change", (e) => {
   const oldName = data.subOwners[0];
   const newName = e.target.value.trim() || "Owner 1";
   Object.values(data.costs).forEach(c => { if(c.ownerTag === oldName) c.ownerTag = newName; });
-  data.otherCosts.forEach(e => { if(e.owner === oldName) e.owner = newName; });
   data.subOwners[0] = newName;
   persist();
 });
@@ -1655,7 +1654,6 @@ document.getElementById("owner2Name").addEventListener("change", (e) => {
   const oldName = data.subOwners[1];
   const newName = e.target.value.trim() || "Owner 2";
   Object.values(data.costs).forEach(c => { if(c.ownerTag === oldName) c.ownerTag = newName; });
-  data.otherCosts.forEach(e => { if(e.owner === oldName) e.owner = newName; });
   data.subOwners[1] = newName;
   persist();
 });
@@ -1672,7 +1670,7 @@ document.getElementById("clearFilterBtn").addEventListener("click", () => {
 });
 document.getElementById("resetBtn").addEventListener("click", () => {
   if(confirm('Clear all uploaded data for "' + currentOwner + '"? Cost prices and settings will be kept.')){
-    data.orders = []; data.returns = []; data.payments = []; data.outstandingPayments = []; data.returnCosts = {};
+    data.orders = []; data.returns = []; data.payments = []; data.returnCosts = {}; data.returnCostsAuto = {};
     persist();
   }
 });
@@ -1688,7 +1686,7 @@ document.getElementById("saveSupabaseBtn").addEventListener("click", () => {
   if(!sbClient){ setSyncStatus("Could not connect — check the URL/key", true); return; }
   setSyncStatus("Connecting...");
   refreshFromCloud(currentOwner);
-  pushToCloud(currentOwner, data);
+  pushToCloud(currentOwner, data); // also push whatever's local so the first sync isn't empty
 });
 document.getElementById("disconnectSupabaseBtn").addEventListener("click", () => {
   localStorage.setItem(SB_DISABLED_KEY, "1");
