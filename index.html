@@ -588,9 +588,10 @@ async function applyCostSheet(file){
 // ---------- stock (all-time sold, independent of the dashboard date filter) ----------
 function computeSoldBySku(d){
   const crSuborderSet = new Set(d.returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
+  const rtoSuborderSet = new Set(d.returns.filter(r=>r.type==="RTO").map(r=>r.suborderNo));
   const sold = {};
   d.orders.forEach(o => {
-    if(o.status !== "DELIVERED" || crSuborderSet.has(o.subOrderNo)) return;
+    if(o.status !== "DELIVERED" || crSuborderSet.has(o.subOrderNo) || rtoSuborderSet.has(o.subOrderNo)) return;
     sold[o.sku] = (sold[o.sku] || 0) + o.qty;
   });
   return sold;
@@ -785,7 +786,14 @@ function computeStats(d, dateFrom, dateTo){
   }
 
   const crSuborderSet = new Set(returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
-  const saleOrders = orders.filter(o => o.status === "DELIVERED" && !crSuborderSet.has(o.subOrderNo));
+  const rtoSuborderSetForSale = new Set(returns.filter(r=>r.type==="RTO").map(r=>r.suborderNo));
+  // An RTO'd order never actually reached the customer, so it must never count
+  // as a completed sale — even if Meesho's Orders export happens to still
+  // show "DELIVERED" for that line. If you re-dispatch the item, Meesho gives
+  // the re-dispatch its own, separate Sub Order No, so it will still be
+  // counted once on its own — this exclusion only removes the original
+  // failed attempt, it never touches the re-dispatch's numbers.
+  const saleOrders = orders.filter(o => o.status === "DELIVERED" && !crSuborderSet.has(o.subOrderNo) && !rtoSuborderSetForSale.has(o.subOrderNo));
 
   const totalSale = saleOrders.reduce((s,o)=>s+o.saleAmount,0);
   const productCost = saleOrders.reduce((s,o)=>s+o.qty*costOf(o.sku),0);
