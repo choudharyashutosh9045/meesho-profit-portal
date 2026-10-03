@@ -103,6 +103,8 @@
 <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
 <symbol id="ic-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
 <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></symbol>
+<symbol id="ic-bank" viewBox="0 0 24 24"><path d="M3 21h18M4 10h16M4 10l8-6 8 6M6 10v8M10 10v8M14 10v8M18 10v8"/></symbol>
+<symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
 </defs>
 </svg>
 
@@ -126,7 +128,9 @@
   <div class="sidebar" id="tabbar">
     <button class="tabbtn active" data-tab="dashboard"><svg class="icon"><use href="#ic-grid"/></svg>Dashboard</button>
     <button class="tabbtn" data-tab="upload"><svg class="icon"><use href="#ic-upload"/></svg>Upload data</button>
+    <button class="tabbtn" data-tab="orders"><svg class="icon"><use href="#ic-grid"/></svg>All orders</button>
     <button class="tabbtn" data-tab="costs"><svg class="icon"><use href="#ic-tag"/></svg>Cost &amp; owners</button>
+    <button class="tabbtn" data-tab="othercost"><svg class="icon"><use href="#ic-plus"/></svg>Other cost</button>
     <button class="tabbtn" data-tab="stock"><svg class="icon"><use href="#ic-box"/></svg>Stock</button>
     <button class="tabbtn" data-tab="returns"><svg class="icon"><use href="#ic-return"/></svg>Returns</button>
     <button class="tabbtn" data-tab="received"><svg class="icon"><use href="#ic-check"/></svg>Received payment</button>
@@ -193,6 +197,11 @@
     </div>
   </div>
 
+  <!-- ALL ORDERS -->
+  <div class="tabpanel" id="panel-orders">
+    <div class="card" id="ordersPanel" style="padding:0;"></div>
+  </div>
+
   <!-- COSTS -->
   <div class="tabpanel" id="panel-costs">
     <div class="card" style="padding:18px;margin-bottom:18px;">
@@ -204,6 +213,11 @@
       </div>
     </div>
     <div class="card" id="costPanel" style="padding:0;"></div>
+  </div>
+
+  <!-- OTHER COST -->
+  <div class="tabpanel" id="panel-othercost">
+    <div class="card" id="otherCostPanel" style="padding:0;"></div>
   </div>
 
   <!-- STOCK -->
@@ -253,8 +267,8 @@
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
         <div>
-          <div style="font-size:13px;">Other cost</div>
-          <div class="muted" style="font-size:11.5px;">Miscellaneous business expenses (packaging, courier supplies, labour, etc.) — subtracted once from Net Profit</div>
+          <div style="font-size:13px;">Other cost (flat)</div>
+          <div class="muted" style="font-size:11.5px;">Quick one-number catch-all — for itemised entries with dates, use the "Other cost" tab instead</div>
         </div>
         <div>₹ <input type="number" id="otherCostInput" style="width:64px;text-align:right;" class="tabular"/></div>
       </div>
@@ -320,10 +334,10 @@ const dataKey = (o) => "mpp_data_v3_" + o;
 function emptyData(){
   return {
     orders: [], returns: [], payments: [], outstanding: [],
-    adsCostRows: [], referralRows: [], compensationRows: [],
+    adsCostRows: [], referralRows: [], compensationRows: [], otherCosts: [],
     costs: {}, returnCosts: {}, returnCostsAuto: {}, stock: {},
     subOwners: ["Owner 1", "Owner 2"],
-    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, otherCost: 0, lowStockThreshold: 5 }
+    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, otherCost: 0, lowStockThreshold: 5, actualBankReceived: 0 }
   };
 }
 function listOwners(){ try{ return JSON.parse(localStorage.getItem(OWNERS_KEY) || "[]"); }catch(e){ return []; } }
@@ -346,6 +360,7 @@ function loadOwnerData(owner){
     merged.adsCostRows = parsed.adsCostRows || [];
     merged.referralRows = parsed.referralRows || [];
     merged.compensationRows = parsed.compensationRows || [];
+    merged.otherCosts = parsed.otherCosts || [];
     return merged;
   }catch(e){ return emptyData(); }
 }
@@ -411,6 +426,7 @@ async function refreshFromCloud(owner){
       merged.adsCostRows = row.data.adsCostRows || [];
       merged.referralRows = row.data.referralRows || [];
       merged.compensationRows = row.data.compensationRows || [];
+      merged.otherCosts = row.data.otherCosts || [];
       data = merged;
       saveOwnerData(owner, data);
       render();
@@ -456,7 +472,7 @@ if(!currentOwner || !owners.includes(currentOwner)){
 }
 let data = loadOwnerData(currentOwner);
 let financeChartInstance = null, outcomeChartInstance = null, trendChartInstance = null;
-let costFilter = "", returnsFilter = "", receivedFilter = "", pendingFilter = "", stockFilter = "";
+let costFilter = "", returnsFilter = "", receivedFilter = "", pendingFilter = "", stockFilter = "", ordersFilter = "", ordersStatusFilter = "";
 let dateFrom = "", dateTo = "";
 
 function persist(){ saveOwnerData(currentOwner, data); render(); pushToCloud(currentOwner, data); }
@@ -636,7 +652,7 @@ async function parsePaymentsXlsx(file){
         const finalSettlement = parseFloat(String(row[settlementIdx] ?? "0"))||0;
         const liveStatus = cleanKey(row[statusIdx]);
         const payDateRaw = cleanKey(row[payDateIdx]).toLowerCase();
-        const rec = { subOrderNo, finalSettlement, liveStatus };
+        const rec = { subOrderNo, finalSettlement, liveStatus, payDate: cleanKey(row[payDateIdx]) };
         if(!payDateRaw || payDateRaw === "unscheduled"){
           outstanding.push(rec);
         } else {
@@ -775,7 +791,8 @@ function computeStats(d, dateFrom, dateTo){
   const productCost = saleOrders.reduce((s,o)=>s+o.qty*costOf(o.sku),0);
   const adsCost = Number(d.settings.adsCost) || 0;
   const globalOtherCost = Number(d.settings.otherCost) || 0;
-  const totalCost = productCost + adsCost + globalOtherCost;
+  const itemizedOtherCost = (d.otherCosts||[]).reduce((s,r)=>s+(Number(r.amount)||0),0);
+  const totalCost = productCost + adsCost + globalOtherCost + itemizedOtherCost;
   const profit = totalSale - totalCost;
   const gstPct = d.settings.gstPercent;
   const gst = totalSale * (gstPct/(100+gstPct));
@@ -808,6 +825,7 @@ function computeStats(d, dateFrom, dateTo){
   const referralTotal = d.referralRows.reduce((s,r)=>s+r.netAmount,0);
   const compensationTotal = d.compensationRows.reduce((s,r)=>s+r.amount,0);
   const outstandingTotal = outstandingRows.reduce((s,o)=>s+o.finalSettlement,0);
+  const expectedBankTotal = settlement + referralTotal + compensationTotal - adsCostFromFile;
 
   const bySubOwner = {};
   d.subOwners.forEach(o => bySubOwner[o] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 });
@@ -860,11 +878,11 @@ function computeStats(d, dateFrom, dateTo){
   const trend = trendMonths.map(m => ({ month:m, sales:byMonth[m].sales, orders:byMonth[m].orders }));
 
   return {
-    totalSale, totalCost, productCost, adsCost, globalOtherCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss, crAutoCount, crDefaultCount,
+    totalSale, totalCost, productCost, adsCost, globalOtherCost, itemizedOtherCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss, crAutoCount, crDefaultCount,
     netProfit, settlement, orderCount:saleOrders.length, totalOrders:totalOrdersAll, missing, bySubOwner,
     deliveredCount: deliveredAllCount, inProgressCount, dateRange, saleOrders, pendingOrders, pendingAmount,
     cancelledCount, shippedCount, deliveryRate, rtoRate, returnRate, trend,
-    adsCostFromFile, referralTotal, compensationTotal, outstandingTotal
+    adsCostFromFile, referralTotal, compensationTotal, outstandingTotal, expectedBankTotal
   };
 }
 
@@ -1039,7 +1057,7 @@ function renderKpis(stats){
   const el = document.getElementById("kpiGrid");
   const subs = {
     totalSale: stats.orderCount + " delivered orders",
-    totalCost: "product + other + ads" + (stats.globalOtherCost ? " + misc ₹" + Math.round(stats.globalOtherCost).toLocaleString("en-IN") : ""),
+    totalCost: "product + other + ads" + ((stats.globalOtherCost+stats.itemizedOtherCost) ? " + misc ₹" + Math.round(stats.globalOtherCost+stats.itemizedOtherCost).toLocaleString("en-IN") : ""),
     profit: "sale − cost",
     gst: data.settings.gstPercent + "% of sale",
     rtoLoss: stats.rtoCount + " orders, no loss",
@@ -1471,6 +1489,162 @@ function renderStockPanel(){
   });
 }
 
+function renderOtherCostPanel(stats){
+  const el = document.getElementById("otherCostPanel");
+  const entries = (data.otherCosts||[]).slice().sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+  const total = entries.reduce((s,r)=>s+(Number(r.amount)||0),0);
+  const todayStr = new Date().toISOString().slice(0,10);
+  const header = `
+    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:14px;font-weight:600;">Other cost ledger <span class="muted" style="font-weight:400;font-size:12px;">(${entries.length} entries)</span></div>
+        <div class="alert tabular" style="font-size:18px;font-weight:700;margin-top:4px;">- ${fmt(total)}</div>
+      </div>
+    </div>
+    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Log packaging, courier supplies, labour, or any other misc. expense here with a date and note. The total is subtracted from Net Profit alongside the flat "Other cost" amount in Settings (if you've set one).</div>
+    <div style="padding:0 18px 18px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+      <div><div class="muted" style="font-size:11px;margin-bottom:4px;">Date</div><input type="date" id="ocDateInput" value="${todayStr}" style="width:150px;"/></div>
+      <div style="flex:1;min-width:180px;"><div class="muted" style="font-size:11px;margin-bottom:4px;">Description</div><input type="text" id="ocDescInput" placeholder="e.g. Packaging material" style="width:100%;font-family:'Inter',sans-serif;"/></div>
+      <div><div class="muted" style="font-size:11px;margin-bottom:4px;">Amount (₹)</div><input type="number" id="ocAmountInput" placeholder="0" style="width:110px;"/></div>
+      <button class="btn-gold" id="ocAddBtn"><svg class="icon"><use href="#ic-plus"/></svg>Add entry</button>
+    </div>`;
+  const rows = entries.map(r => `<tr>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(r.date||"—")}</td>
+      <td>${esc(r.description||"—")}</td>
+      <td style="text-align:right;" class="alert tabular">- ${fmt(Number(r.amount)||0)}</td>
+      <td style="text-align:right;"><button class="btn-ghost danger" data-id="${esc(r.id)}" style="padding:4px 9px;"><svg class="icon" style="width:13px;height:13px;"><use href="#ic-trash"/></svg></button></td>
+    </tr>`).join("");
+  el.innerHTML = header + `
+    <div style="border-top:1px solid var(--line);max-height:420px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Date</th><th>Description</th><th style="text-align:right;">Amount</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">No entries yet — add your first misc. expense above.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  document.getElementById("ocAddBtn").addEventListener("click", () => {
+    const dateVal = document.getElementById("ocDateInput").value || todayStr;
+    const descVal = document.getElementById("ocDescInput").value.trim();
+    const amtVal = parseFloat(document.getElementById("ocAmountInput").value) || 0;
+    if(!descVal || !amtVal){ alert("Please enter a description and an amount."); return; }
+    data.otherCosts = data.otherCosts || [];
+    data.otherCosts.push({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), date: dateVal, description: descVal, amount: amtVal });
+    persist();
+  });
+  el.querySelectorAll("[data-id]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const id = e.currentTarget.getAttribute("data-id");
+      data.otherCosts = (data.otherCosts||[]).filter(r => r.id !== id);
+      persist();
+    });
+  });
+}
+
+const ORDER_STATUS_OPTIONS = ["DELIVERED","SHIPPED","READY_TO_SHIP","CANCELLED"];
+function renderOrdersPanel(stats){
+  const el = document.getElementById("ordersPanel");
+  const crSuborderSet = new Set(data.returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
+  const rtoSuborderSet = new Set(data.returns.filter(r=>r.type==="RTO").map(r=>r.suborderNo));
+  let rows = data.orders.slice().sort((a,b)=> (b.orderDate||"").localeCompare(a.orderDate||""));
+  if(ordersStatusFilter) rows = rows.filter(o => o.status === ordersStatusFilter);
+  if(ordersFilter){
+    rows = rows.filter(o =>
+      o.subOrderNo.toLowerCase().includes(ordersFilter) ||
+      o.sku.toLowerCase().includes(ordersFilter) ||
+      o.productName.toLowerCase().includes(ordersFilter)
+    );
+  }
+  const statusOpts = `<option value="">All statuses</option>` + ORDER_STATUS_OPTIONS.map(s=>`<option value="${s}" ${ordersStatusFilter===s?"selected":""}>${s.replace(/_/g," ")}</option>`).join("");
+  const header = `
+    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:14px;font-weight:600;">All orders <span class="muted" style="font-weight:400;font-size:12px;">(${data.orders.length} total${ordersFilter||ordersStatusFilter?", "+rows.length+" shown":""})</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="ordersStatusSelect">${statusOpts}</select>
+        <div style="position:relative;">
+          <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
+          <input id="ordersSearch" placeholder="Search Sub Order No, SKU or product" value="${esc(ordersFilter)}" style="padding-left:30px;width:260px;"/>
+        </div>
+      </div>
+    </div>`;
+  if(!data.orders.length){
+    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No orders uploaded yet — upload your Orders export CSV in the Upload data tab.</div>`;
+    return;
+  }
+  const tableRows = rows.slice(0, 500).map(o => {
+    let tag;
+    if(crSuborderSet.has(o.subOrderNo)) tag = `<span class="badge" style="background:rgba(36,84,199,0.14);color:var(--gold);">Return</span>`;
+    else if(rtoSuborderSet.has(o.subOrderNo)) tag = `<span class="badge" style="background:rgba(180,83,9,0.14);color:#B45309;">RTO</span>`;
+    else if(o.status === "DELIVERED") tag = `<span class="badge" style="background:rgba(21,115,71,0.14);color:var(--teal);">Delivered</span>`;
+    else if(o.status === "CANCELLED") tag = `<span class="badge" style="background:rgba(180,35,24,0.14);color:var(--alert);">Cancelled</span>`;
+    else tag = `<span class="badge">${esc(o.status.replace(/_/g," "))}</span>`;
+    return `<tr>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(o.subOrderNo)}</td>
+      <td class="muted tabular" style="white-space:nowrap;">${esc(o.orderDate||"—")}</td>
+      <td>${esc(o.productName)}</td>
+      <td class="muted tabular">${esc(o.sku)}</td>
+      <td class="tabular" style="text-align:center;">${o.qty}</td>
+      <td class="tabular" style="text-align:right;">${fmt(o.saleAmount)}</td>
+      <td>${tag}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = header + `
+    ${rows.length > 500 ? `<div class="muted" style="padding:0 18px 10px;font-size:11px;">Showing the most recent 500 of ${rows.length} matching orders — narrow your search to see more precisely.</div>` : ""}
+    <div style="border-top:1px solid var(--line);max-height:520px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Sub Order No</th><th>Order Date</th><th>Product</th><th>SKU</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Sale Amount</th><th>Status</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  document.getElementById("ordersSearch").addEventListener("input", (e) => {
+    ordersFilter = e.target.value.toLowerCase();
+    renderOrdersPanel(computeStats(data, dateFrom, dateTo));
+  });
+  document.getElementById("ordersStatusSelect").addEventListener("change", (e) => {
+    ordersStatusFilter = e.target.value;
+    renderOrdersPanel(computeStats(data, dateFrom, dateTo));
+  });
+}
+
+function renderReconcileCard(stats){
+  const el = document.getElementById("reconcileCard");
+  const actual = Number(data.settings.actualBankReceived) || 0;
+  const expected = stats.expectedBankTotal;
+  const diff = actual - expected;
+  const hasActual = !!data.settings.actualBankReceived;
+  let statusLine = "";
+  if(hasActual){
+    if(Math.abs(diff) < 1){
+      statusLine = `<div class="teal" style="font-size:12.5px;font-weight:600;margin-top:10px;">✓ Matches — within ₹1 of what Meesho's files say you should have received.</div>`;
+    } else if(diff < 0){
+      statusLine = `<div class="alert" style="font-size:12.5px;font-weight:600;margin-top:10px;">⚠ Your bank is short by ${fmt(Math.abs(diff))} vs what the uploaded files say Meesho sent. Possible causes: a payment file for this period isn't uploaded yet, Meesho batched/delayed the transfer, or TDS/other deductions not captured here.</div>`;
+    } else {
+      statusLine = `<div class="gold" style="font-size:12.5px;font-weight:600;margin-top:10px;">ℹ Your bank shows ${fmt(diff)} more than the files account for — you may have older settlements included, or payments from a period not yet uploaded here.</div>`;
+    }
+  }
+  el.innerHTML = `
+    <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:7px;"><svg class="icon" style="color:var(--muted);"><use href="#ic-bank"/></svg>Reconcile with your bank</div>
+    <div class="muted" style="font-size:11.5px;margin:5px 0 10px;">What Meesho's files say you should have received, all in — not just order settlements.</div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span class="muted">Order settlements (received)</span><span class="tabular">${fmt(stats.settlement)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span class="muted">+ Referral payments</span><span class="tabular">${fmt(stats.referralTotal)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span class="muted">+ Compensation &amp; recovery</span><span class="tabular">${fmt(stats.compensationTotal)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;"><span class="muted">− Ads cost (from file)</span><span class="tabular alert">- ${fmt(stats.adsCostFromFile)}</span></div>
+    <div style="border-top:1px solid var(--line);padding-top:8px;display:flex;justify-content:space-between;margin-bottom:12px;">
+      <span style="font-size:12.5px;font-weight:600;">Expected in bank</span>
+      <span class="tabular gold" style="font-size:15px;font-weight:700;">${fmt(expected)}</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <div style="flex:1;">
+        <div class="muted" style="font-size:11px;margin-bottom:4px;">What actually landed in your bank (₹)</div>
+        <input type="number" id="bankActualInput" value="${data.settings.actualBankReceived || ""}" placeholder="Enter your bank total" style="width:100%;"/>
+      </div>
+    </div>
+    ${statusLine}
+  `;
+  document.getElementById("bankActualInput").addEventListener("change", (e) => {
+    data.settings.actualBankReceived = parseFloat(e.target.value) || 0;
+    persist();
+  });
+}
+
 function renderCharts(stats){
   const financeCtx = document.getElementById("financeChart");
   const outcomeCtx = document.getElementById("outcomeChart");
@@ -1560,7 +1734,8 @@ function exportSummaryCsv(stats){
     ["Total Sale", stats.totalSale.toFixed(2)],
     ["Total Cost (incl. ads + other)", stats.totalCost.toFixed(2)],
     ["Ads Cost", stats.adsCost.toFixed(2)],
-    ["Other Cost (global)", stats.globalOtherCost.toFixed(2)],
+    ["Other Cost (flat, Settings)", stats.globalOtherCost.toFixed(2)],
+    ["Other Cost (itemised ledger)", stats.itemizedOtherCost.toFixed(2)],
     ["Profit", stats.profit.toFixed(2)],
     ["GST (" + data.settings.gstPercent + "%)", stats.gst.toFixed(2)],
     ["RTO count", stats.rtoCount],
@@ -1569,6 +1744,7 @@ function exportSummaryCsv(stats){
     ["Customer Return loss", stats.crLoss.toFixed(2)],
     ["Net Profit", stats.netProfit.toFixed(2)],
     ["Meesho settlement received", stats.settlement.toFixed(2)],
+    ["Expected bank total (settlement+referral+compensation-ads)", stats.expectedBankTotal.toFixed(2)],
   ];
   const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -1595,6 +1771,8 @@ function render(){
     () => renderReceivedPanel(stats),
     () => renderPendingPanel(stats),
     () => renderCostPanel(stats),
+    () => renderOtherCostPanel(stats),
+    () => renderOrdersPanel(stats),
     () => renderStockPanel(),
     () => renderCharts(stats),
     () => renderReconcileCard(stats),
