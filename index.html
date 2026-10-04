@@ -32,7 +32,7 @@ th{color:var(--mut);font-weight:600}
 .msg{margin-top:12px;padding:10px 14px;border-radius:8px;font-size:13px;white-space:pre-line;display:none}
 .msg.ok{display:block;background:#ecfdf5;color:var(--ok)}
 .msg.err{display:block;background:#fef2f2;color:var(--bad)}
-input,select{padding:8px;border:1px solid #d7dae6;border-radius:8px;font-size:14px}
+input,select{padding:8px;border:1px solid #d7dae6;border-radius:8px;font-size:14px;max-width:140px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
 .pos{color:var(--ok)} .neg{color:var(--bad)}
 .note{font-size:12px;color:var(--warn);margin-top:8px}
@@ -45,26 +45,36 @@ input,select{padding:8px;border:1px solid #d7dae6;border-radius:8px;font-size:14
 <script>
 /* ============ STATE ============ */
 const DEF_SETTINGS={gstRate:18,returnLoss:170,adsCost:0,otherFlat:0,rtoLoss:0,lowStock:5,owner1:"Owner 1",owner2:"Owner 2",shopName:"My Store",supabaseUrl:"",supabaseKey:""};
-let S=JSON.parse(localStorage.getItem("meeshoPortal")||"null")||{orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},settings:{...DEF_SETTINGS}};
+let S=JSON.parse(localStorage.getItem("meeshoPortal")||"null")||{orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},dashMonth:"",settings:{...DEF_SETTINGS}};
+S.settings={...DEF_SETTINGS,...(S.settings||{})};S.dashMonth=S.dashMonth||"";
 function save(){localStorage.setItem("meeshoPortal",JSON.stringify(S))}
 function fmt(n){return "₹"+(Math.round((n||0)*100)/100).toLocaleString("en-IN")}
 function dmy(d){if(!d)return "—";const x=new Date(d);return isNaN(x)?"—":String(x.getDate()).padStart(2,"0")+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+x.getFullYear()}
 function monthKey(d){if(!d)return "";const x=new Date(d);return isNaN(x)?"":x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")}
-function monthLabel(k){if(!k)return "";const [y,m]=k.split("-");return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]+" "+y}
+function monthLabel(k){if(!k)return "";const p=k.split("-");return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+p[1]-1]+" "+p[0]}
+function num(x){const n=parseFloat(String(x==null?"":x).replace(/[₹,\s]/g,""));return isNaN(n)?0:n}
 
 /* ============ NAV ============ */
 const TABS=["Dashboard","Upload data","All orders","Cost & owners","Other cost","Stock","Returns","Received payment","Pending payment","Settings"];
 let cur="Dashboard";
-function renderNav(){document.getElementById("nav").innerHTML="<h1>📦 "+(S.settings.shopName||"Meesho Portal")+"</h1>"+TABS.map(t=>`<button class="${t===cur?'active':''}" onclick="go('${t}')">${t}</button>`).join("")}
-function go(t){cur=t;renderNav();render()}
-function render(){const v=document.getElementById("view");v.innerHTML=({Dashboard:vDash,"Upload data":vUpload,"All orders":vOrders,"Cost & owners":vCost,"Other cost":vOther,Stock:vStock,Returns:vReturns,"Received payment":vReceived,"Pending payment":vPending,Settings:vSettings})[cur]();if(cur==="Dashboard")drawCharts()}
+function renderNav(){
+  document.getElementById("nav").innerHTML="<h1>📦 "+esc(S.settings.shopName||"Meesho Portal")+"</h1>"+
+    TABS.map(t=>`<button data-tab="${t}" class="${t===cur?'active':''}">${t}</button>`).join("");
+}
+document.getElementById("nav").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(!b)return;cur=b.dataset.tab;renderNav();render();});
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
+function render(){
+  const v=document.getElementById("view");
+  const fns={"Dashboard":vDash,"Upload data":vUpload,"All orders":vOrders,"Cost & owners":vCost,"Other cost":vOther,"Stock":vStock,"Returns":vReturns,"Received payment":vReceived,"Pending payment":vPending,"Settings":vSettings};
+  try{v.innerHTML=fns[cur]();if(cur==="Dashboard")drawCharts();}
+  catch(err){v.innerHTML='<div class="card"><h2>Something went wrong</h2><p style="color:var(--bad)">'+esc(err.message)+'</p></div>';}
+}
 
 /* ============ IMPORT ENGINE ============ */
 const ALIAS={subOrder:["sub order no","suborder no","sub order number","suborder number","sub_order_no"],order:["order no","order number","order_id","order id"],sku:["supplier sku","sku","style id","product id"],qty:["quantity","qty"],price:["supplier discounted price","sale amount","final settlement amount","item total","supplier price"],status:["order status","status","item status"],date:["order date","order date time","created at"]};
 function norm(s){return String(s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
-function findHeaderRow(rows){for(let i=0;i<Math.min(rows.length,10);i++){const cells=rows[i].map(norm);let hits=0;for(const k in ALIAS)if(cells.some(c=>ALIAS[k].some(a=>c===a||c.includes(a))))hits++;if(hits>=2)return i}return 0}
-function mapCols(header){const h=header.map(norm),m={};for(const k in ALIAS){const i=h.findIndex(c=>ALIAS[k].some(a=>c===a||c.includes(a)));if(i>-1)m[k]=i}return m}
-function num(x){const n=parseFloat(String(x||"").replace(/[₹,\s]/g,""));return isNaN(n)?0:n}
+function findHeaderRow(rows){for(let i=0;i<Math.min(rows.length,10);i++){const cells=(rows[i]||[]).map(norm);let hits=0;for(const k in ALIAS)if(cells.some(c=>ALIAS[k].some(a=>c===a||c.includes(a))))hits++;if(hits>=2)return i}return 0}
+function mapCols(header){const h=(header||[]).map(norm),m={};for(const k in ALIAS){const i=h.findIndex(c=>ALIAS[k].some(a=>c===a||c.includes(a)));if(i>-1)m[k]=i}return m}
 function parseRows(raw,fileName){
   const hRow=findHeaderRow(raw),map=mapCols(raw[hRow]);
   if(map.subOrder===undefined&&map.order===undefined)throw new Error(fileName+": could not find Sub Order No / Order No column.");
@@ -77,20 +87,18 @@ function parseRows(raw,fileName){
     seen.add(sub);
     const statusRaw=norm(map.status!==undefined?r[map.status]:"");
     let st="New";if(/cancel/.test(statusRaw))st="Cancelled";else if(/\brto\b/.test(statusRaw))st="RTO";else if(/return/.test(statusRaw))st="Customer Return";else if(/deliver/.test(statusRaw))st="Delivered";else if(/ship|transit|dispatch/.test(statusRaw))st="Shipped";
-    const sku=map.sku!==undefined?String(r[map.sku]||"").trim():"";
-    const price=num(map.price!==undefined?r[map.price]:0);
-    const qty=Math.max(1,num(map.qty!==undefined?r[map.qty]:1)||1);
-    S.orders.push({subOrder:sub,order:map.order!==undefined?String(r[map.order]||"").trim():sub,sku,qty,price,status:st,date:map.date!==undefined?r[map.date]||"":""});
+    S.orders.push({subOrder:sub,order:map.order!==undefined?String(r[map.order]||"").trim():sub,sku:map.sku!==undefined?String(r[map.sku]||"").trim():"",qty:Math.max(1,num(map.qty!==undefined?r[map.qty]:1)||1),price:num(map.price!==undefined?r[map.price]:0),status:st,date:map.date!==undefined?(r[map.date]||""):""});
     added++;
   }
-  return {added,dup};
+  return {added:added,dup:dup};
 }
 async function handleFiles(files){
-  const box=document.getElementById("impMsg");box.className="msg";box.style.display="block";box.textContent="Reading files…";
-  let total=0,totalDup=0,log=[];
+  const box=document.getElementById("impMsg");if(!box)return;
+  box.className="msg";box.style.display="block";box.textContent="Reading files…";
+  let total=0,totalDup=0;const log=[];
   for(const f of files){
     try{
-      const isX=f.name.toLowerCase().endsWith(".xlsx")||f.name.toLowerCase().endsWith(".xls");
+      const isX=/\.xlsx?$|\.xls$/.test(f.name.toLowerCase());
       if(isX){
         const wb=XLSX.read(await f.arrayBuffer(),{cellDates:true});
         for(const sn of wb.SheetNames){
@@ -98,45 +106,40 @@ async function handleFiles(files){
           if(!rows.length)continue;
           const n=norm(sn);
           try{
-            if(/payment|settle/.test(n)||wb.SheetNames.length===1){
-              const res=parseRows(rows,f.name+" ["+sn+"]");total+=res.added;totalDup+=res.dup;
-              extractPayments(rows,sn);continue;
-            }
-            if(/ads/.test(n)){extractAds(rows);log.push("✓ Ads sheet read");continue}
-            if(/referral/.test(n)){extractList(rows,"referrals");log.push("✓ Referral sheet read");continue}
-            if(/compens|recover/.test(n)){extractList(rows,"compensations");log.push("✓ Compensation sheet read");continue}
+            if(/payment|settle/.test(n)||wb.SheetNames.length===1){const res=parseRows(rows,f.name+" ["+sn+"]");total+=res.added;totalDup+=res.dup;extractPayments(rows,sn);continue;}
+            if(/ads/.test(n)){extractSum(rows,"ads");log.push("✓ Ads sheet read");continue;}
+            if(/referral/.test(n)){extractSum(rows,"referrals");log.push("✓ Referral sheet read");continue;}
+            if(/compens|recover/.test(n)){extractSum(rows,"compensations");log.push("✓ Compensation sheet read");continue;}
             const res=parseRows(rows,f.name+" ["+sn+"]");total+=res.added;totalDup+=res.dup;
           }catch(e){log.push("⚠ "+sn+": "+e.message)}
         }
       }else{
         const text=await f.text();
-        const rows=text.split(/\r?\n/).map(l=>{const out=[],c=l.split(","),q=c.join("§").replace(/"([^"]*)"/g,"$1");return q.split("§")});
+        const rows=text.split(/\r?\n/).filter(l=>l.trim()).map(l=>Array.from(l.matchAll(/("([^"]*)"|[^,]*)(,|$)/g)).map(m=>m[2]!==undefined?m[2]:m[1]));
         const res=parseRows(rows,f.name);total+=res.added;totalDup+=res.dup;
       }
     }catch(e){log.push("❌ "+f.name+": "+e.message)}
   }
   save();
-  box.className="msg "+(total+totalDup?"ok":"err");
-  box.textContent=`Imported ${total} new orders (${totalDup} duplicates skipped).`+(log.length?"\n"+log.join("\n"):"");
+  box.className="msg "+((total+totalDup)?"ok":"err");
+  box.textContent="Imported "+total+" new orders ("+totalDup+" duplicates skipped)."+(log.length?"\n"+log.join("\n"):"");
   render();
 }
 function extractPayments(rows,sheet){
-  const hr=findHeaderRow(rows),h=rows[hr].map(norm);
+  const hr=findHeaderRow(rows),h=(rows[hr]||[]).map(norm);
   const gi=h.findIndex(c=>/sub ?order/.test(c)),ai=h.findIndex(c=>/final settlement|net amount/.test(c));
   if(gi<0)return;
-  for(let i=hr+1;i<rows.length;i++){const r=rows[i];const sub=String(r[gi]||"").trim();if(!sub)continue;
-    let s=S.settlements.find(x=>x.subOrder===sub);
+  for(let i=hr+1;i<rows.length;i++){
+    const r=rows[i];const sub=String(r[gi]||"").trim();if(!sub)continue;
     const amt=num(ai>-1?r[ai]:0);
-    if(s)s.amount=amt;else S.settlements.push({subOrder:sub,amount:amt,scheduled:!/unsched/.test(norm(sheet))});
+    const ex=S.settlements.find(x=>x.subOrder===sub);
+    if(ex)ex.amount=amt;else S.settlements.push({subOrder:sub,amount:amt,scheduled:!(/unsched/.test(norm(sheet)))});
   }
 }
-function extractAds(rows){const hr=findHeaderRow(rows);let sum=0;for(let i=hr+1;i<rows.length;i++){const r=rows[i];for(const c of r){const v=num(c);if(v)sum+=v}}if(sum)S.payments.ads=sum}
-function extractList(rows,key){const hr=findHeaderRow(rows);S.payments[key]=(S.payments[key]||0);for(let i=hr+1;i<rows.length;i++){const r=rows[i];for(const c of r){const v=num(c);if(v)S.payments[key]+=v}}}
+function extractSum(rows,key){const hr=findHeaderRow(rows);let sum=0;for(let i=hr+1;i<rows.length;i++){const r=rows[i]||[];for(const c of r){const v=num(c);if(v)sum+=v}}if(sum)S.payments[key]=(S.payments[key]||0)+sum}
 
 /* ============ CALC ============ */
-/* Return loss: uses ACTUAL amount from payment file when available (can be negative),
-   otherwise falls back to the default loss in Settings. */
-function returnLossFor(o){const s=S.settlements.find(x=>x.subOrder===o.subOrder);if(s&&s.amount<0)return s.amount;return o.loss??S.settings.returnLoss}
+function returnLossFor(o){const s=S.settlements.find(x=>x.subOrder===o.subOrder);if(s&&s.amount<0)return s.amount;return o.loss!=null?o.loss:S.settings.returnLoss}
 function calc(selMonth){
   const st=S.settings;
   let o=S.orders;
@@ -145,125 +148,173 @@ function calc(selMonth){
   const netSale=delivered.reduce((a,x)=>a+x.price*x.qty,0);
   const productCost=delivered.reduce((a,x)=>a+(S.skuCost[x.sku]||0)*x.qty,0);
   const packCost=delivered.reduce((a,x)=>a+(S.skuPack[x.sku]||0)*x.qty,0);
-  const gst=netSale*st.gstRate/118; /* GST extracted from GST-inclusive sale price, deducted from profit */
+  const gst=netSale*st.gstRate/118;
   const other=st.otherFlat+(selMonth?S.otherCosts.filter(c=>monthKey(c.date)===selMonth).reduce((a,c)=>a+c.amount,0):S.otherCosts.reduce((a,c)=>a+c.amount,0));
   const ads=st.adsCost;
   const rto=o.filter(x=>x.status==="RTO");
   const returns=o.filter(x=>x.status==="Customer Return");
-  const rtoLoss=rto.length*st.rtoLoss, retLoss=returns.reduce((a,x)=>a+returnLossFor(x),0);
+  const rtoLoss=rto.length*st.rtoLoss;
+  const retLoss=returns.reduce((a,x)=>a+returnLossFor(x),0);
   const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
-  return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o};
+  return {netSale:netSale,productCost:productCost,packCost:packCost,gst:gst,other:other,ads:ads,rtoLoss:rtoLoss,retLoss:retLoss,netProfit:netProfit,delivered:delivered,rto:rto,returns:returns,orders:o};
 }
 
+/* ============ SAFE SETTERS (used by data-attributes) ============ */
+function setCost(sku,field,val){S[field]=S[field]||{};S[field][sku]=num(val);save();}
+function setOwner(sku,val){S.skuOwner[sku]=val;save();}
+function setStock(sku,val){S.stock[sku]=num(val);save();}
+function setLoss(sub,val){const o=S.orders.find(x=>x.subOrder===sub);if(o){o.loss=num(val);save();}}
+function setMonth(val){S.dashMonth=(val==="ALL"?"":val);save();render();}
+
 /* ============ VIEWS ============ */
-function kpi(l,v){return `<div class="kpi"><b>${v}</b><span>${l}</span></div>`}
+function kpi(l,v){return '<div class="kpi"><b>'+v+'</b><span>'+l+'</span></div>'}
 function monthPicker(){
   const ms=[...new Set(S.orders.map(o=>monthKey(o.date)).filter(Boolean))].sort().reverse();
   const curM=S.dashMonth&&ms.includes(S.dashMonth)?S.dashMonth:"ALL";
-  return `<div class="row" style="margin-bottom:10px"><div><label>Month filter</label><br>
-  <select onchange="S.dashMonth=this.value==='ALL'?'':this.value;save();render()">
-  <option value="ALL"${curM==="ALL"?" selected":""}>All months</option>
-  ${ms.map(k=>`<option value="${k}"${curM===k?" selected":""}>${monthLabel(k)}</option>`).join("")}
-  </select></div></div>`;
+  let opts='<option value="ALL"'+(curM==="ALL"?" selected":"")+'>All months</option>';
+  ms.forEach(k=>{opts+='<option value="'+k+'"'+(curM===k?" selected":"")+'>'+monthLabel(k)+'</option>'});
+  return '<div class="row" style="margin-bottom:10px"><div><label>Month filter</label><br><select onchange="setMonth(this.value)">'+opts+'</select></div></div>';
 }
 function vDash(){
   const sel=S.dashMonth||"",c=calc(sel),st=S.settings;
   const paid=S.settlements.filter(s=>s.scheduled).reduce((a,s)=>a+s.amount,0);
   const pend=c.delivered.reduce((a,x)=>{const s=S.settlements.find(z=>z.subOrder===x.subOrder);return a+((s&&s.scheduled)?0:(s?s.amount:x.price))},0);
-  return `<div class="card"><h2>${st.shopName||"My Store"}${sel?" — "+monthLabel(sel):""}</h2>${monthPicker()}
-  <div class="kpis">
-  ${kpi("Net Profit",`<span class="${c.netProfit>=0?'pos':'neg'}">${fmt(c.netProfit)}</span>`)}
-  ${kpi("Net Sale",fmt(c.netSale))}${kpi("Product Cost",fmt(c.productCost))}${kpi("GST ("+st.gstRate+"%)",`<span class="neg">${fmt(c.gst)}</span>`)}
-  ${kpi("Packaging",fmt(c.packCost))}${kpi("Other+Ads",fmt(c.other+c.ads))}
-  ${kpi("Received",fmt(paid))}${kpi("Pending",fmt(pend))}</div></div>
-  <div class="card"><h2>Status</h2><div class="kpis">
-  ${kpi("Total Orders",c.orders.length)}${kpi("Delivered",c.delivered.length)}${kpi("Shipped",c.orders.filter(x=>x.status==="Shipped").length)}
-  ${kpi("Cancelled",c.orders.filter(x=>x.status==="Cancelled").length)}${kpi("RTO",c.rto.length)}${kpi("Returns",c.returns.length)}</div></div>
-  <div class="card"><h2>Profit & Loss</h2>
-  <table><tr><td>Total Sale</td><td>${fmt(c.netSale)}</td><td>${c.delivered.length} delivered</td></tr>
-  <tr><td>Product Cost</td><td>−${fmt(c.productCost)}</td><td></td></tr>
-  <tr><td>Packaging cost</td><td>−${fmt(c.packCost)}</td><td>per-SKU, Cost & owners tab</td></tr>
-  <tr><td>GST ${st.gstRate}% (from sale)</td><td>−${fmt(c.gst)}</td><td>deducted from profit</td></tr>
-  <tr><td>Other cost</td><td>−${fmt(c.other)}</td><td></td></tr>
-  <tr><td>Ads cost</td><td>−${fmt(c.ads)}</td><td></td></tr>
-  <tr><td>RTO loss</td><td>−${fmt(c.rtoLoss)}</td><td>${c.rto.length} orders</td></tr>
-  <tr><td>Customer Return loss</td><td>−${fmt(c.retLoss)}</td><td>${c.returns.length} orders (actual from payment file where available)</td></tr>
-  <tr><td><b>Net Profit</b></td><td><b class="${c.netProfit>=0?'pos':'neg'}">${fmt(c.netProfit)}</b></td><td>sale − all costs − GST − losses</td></tr></table></div>
-  <div class="card"><h3>Sales & orders trend</h3><canvas id="ch1" height="140"></canvas>
-  <h3 style="margin-top:16px">Order outcomes</h3><canvas id="ch2" height="140"></canvas></div>
-  <div class="note">⚠ GST here is record-keeping support only — verify filings with your CA.</div>`;
+  return '<div class="card"><h2>'+esc(st.shopName||"My Store")+(sel?" — "+monthLabel(sel):"")+'</h2>'+monthPicker()+
+  '<div class="kpis">'+
+  kpi("Net Profit",'<span class="'+(c.netProfit>=0?'pos':'neg')+'">'+fmt(c.netProfit)+'</span>')+
+  kpi("Net Sale",fmt(c.netSale))+kpi("Product Cost",fmt(c.productCost))+kpi("GST ("+st.gstRate+"%)",'<span class="neg">'+fmt(c.gst)+'</span>')+
+  kpi("Packaging",fmt(c.packCost))+kpi("Other+Ads",fmt(c.other+c.ads))+
+  kpi("Received",fmt(paid))+kpi("Pending",fmt(pend))+'</div></div>'+
+  '<div class="card"><h2>Status</h2><div class="kpis">'+
+  kpi("Total Orders",c.orders.length)+kpi("Delivered",c.delivered.length)+kpi("Shipped",c.orders.filter(x=>x.status==="Shipped").length)+
+  kpi("Cancelled",c.orders.filter(x=>x.status==="Cancelled").length)+kpi("RTO",c.rto.length)+kpi("Returns",c.returns.length)+'</div></div>'+
+  '<div class="card"><h2>Profit & Loss</h2><table>'+
+  "<tr><td>Total Sale</td><td>"+fmt(c.netSale)+"</td><td>"+c.delivered.length+" delivered</td></tr>"+
+  "<tr><td>Product Cost</td><td>−"+fmt(c.productCost)+"</td><td></td></tr>"+
+  "<tr><td>Packaging cost</td><td>−"+fmt(c.packCost)+"</td><td>per-SKU, Cost & owners tab</td></tr>"+
+  "<tr><td>GST "+st.gstRate+"% (from sale)</td><td>−"+fmt(c.gst)+"</td><td>deducted from profit</td></tr>"+
+  "<tr><td>Other cost</td><td>−"+fmt(c.other)+"</td><td></td></tr>"+
+  "<tr><td>Ads cost</td><td>−"+fmt(c.ads)+"</td><td></td></tr>"+
+  "<tr><td>RTO loss</td><td>−"+fmt(c.rtoLoss)+"</td><td>"+c.rto.length+" orders</td></tr>"+
+  "<tr><td>Customer Return loss</td><td>−"+fmt(c.retLoss)+"</td><td>"+c.returns.length+" orders (actual from payment file where available)</td></tr>"+
+  "<tr><td><b>Net Profit</b></td><td><b class='"+(c.netProfit>=0?'pos':'neg')+"'>"+fmt(c.netProfit)+"</b></td><td>sale − all costs − GST − losses</td></tr>"+
+  '</table></div>'+
+  '<div class="card"><h3>Sales & orders trend</h3><canvas id="ch1" height="140"></canvas><h3 style="margin-top:16px">Order outcomes</h3><canvas id="ch2" height="140"></canvas></div>'+
+  '<div class="note">⚠ GST here is record-keeping support only — verify filings with your CA.</div>';
 }
+let ch1Ref=null,ch2Ref=null;
 function drawCharts(){
   if(!window.Chart)return;
+  if(ch1Ref){ch1Ref.destroy();ch1Ref=null}if(ch2Ref){ch2Ref.destroy();ch2Ref=null}
   const sel=S.dashMonth||"";
-  const byDate={};S.orders.filter(o=>o.status==="Delivered"&&(!sel||monthKey(o.date)===sel)).forEach(o=>{const k=dmy(o.date);byDate[k]=(byDate[k]||0)+o.price*o.qty});
-  const ks=Object.keys(byDate).slice(-14);
-  new Chart(ch1,{type:"line",data:{labels:ks,datasets:[{label:"Delivered sale ₹",data:ks.map(k=>byDate[k]),borderColor:"#7c3aed",fill:false}]},options:{plugins:{legend:{display:true}}}});
-  const cnt={};S.orders.filter(o=>!sel||monthKey(o.date)===sel).forEach(o=>cnt[o.status]=(cnt[o.status]||0)+1);
-  new Chart(ch2,{type:"doughnut",data:{labels:Object.keys(cnt),datasets:[{data:Object.values(cnt),backgroundColor:["#7c3aed","#3b82f6","#059669","#dc2626","#d97706","#8b5cf6","#64748b"]}]},options:{plugins:{legend:{position:"bottom"}}}});
+  const c1=document.getElementById("ch1"),c2=document.getElementById("ch2");
+  if(c1){
+    const byDate={};S.orders.filter(o=>o.status==="Delivered"&&(!sel||monthKey(o.date)===sel)).forEach(o=>{const k=dmy(o.date);byDate[k]=(byDate[k]||0)+o.price*o.qty});
+    const ks=Object.keys(byDate).slice(-14);
+    try{ch1Ref=new Chart(c1,{type:"line",data:{labels:ks,datasets:[{label:"Delivered sale ₹",data:ks.map(k=>byDate[k]),borderColor:"#7c3aed",fill:false}]},options:{plugins:{legend:{display:true}}}});}catch(e){}
+  }
+  if(c2){
+    const cnt={};S.orders.filter(o=>!sel||monthKey(o.date)===sel).forEach(o=>{cnt[o.status]=(cnt[o.status]||0)+1});
+    try{ch2Ref=new Chart(c2,{type:"doughnut",data:{labels:Object.keys(cnt),datasets:[{data:Object.values(cnt),backgroundColor:["#7c3aed","#3b82f6","#059669","#dc2626","#d97706","#8b5cf6","#64748b"]}]},options:{plugins:{legend:{position:"bottom"}}}});}catch(e){}
+  }
 }
-function vUpload(){return `<div class="card"><h2>Upload your Meesho exports</h2>
-<p style="color:var(--mut);font-size:13px;margin-bottom:12px">Orders CSV/XLSX + payment file (all sheets picked up automatically — return deductions from the payment file are used as the actual return loss). Duplicates are skipped by Sub Order No. Nothing leaves your browser.</p>
-<div class="drop" id="dz">📄 Drag & drop your Meesho files here<br><small style="color:var(--mut)">— or click to browse —</small>
-<input type="file" id="fp" multiple accept=".csv,.xlsx,.xls" style="display:none"></div>
-<div id="impMsg" class="msg"></div>
-<button class="btn gray" style="margin-top:12px" onclick="if(confirm('Reset ALL data for this business?')){S={orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},settings:{...DEF_SETTINGS}};save();render()}">Reset this business's data</button></div>`}
-function vOrders(){const rows=S.orders.map(o=>`<tr><td>${dmy(o.date)}</td><td>${o.subOrder}</td><td>${o.sku}</td><td>${o.qty}</td><td>${fmt(o.price*o.qty)}</td><td>${o.status}</td></tr>`).join("");
-  return `<div class="card"><h2>All orders (${S.orders.length})</h2>${S.orders.length?`<table><tr><th>Date</th><th>Sub Order</th><th>SKU</th><th>Qty</th><th>Sale</th><th>Status</th></tr>${rows}</table>`:"<p style='color:var(--mut)'>No orders yet — upload in the Upload data tab.</p>"}</div>`}
-function vCost(){const skus=[...new Set(S.orders.map(o=>o.sku).filter(Boolean))];
-  return `<div class="card"><h2>Cost & owners</h2>
-  <div class="row"><div><label>Owner 1 name</label><br><input id="o1" value="${S.settings.owner1}"></div>
-  <div><label>Owner 2 name</label><br><input id="o2" value="${S.settings.owner2}"></div>
-  <button class="btn" onclick="S.settings.owner1=o1.value;S.settings.owner2=o2.value;save();render()">Save names</button></div>
-  <h3>Product cost prices + packaging cost</h3>
-  <p style="color:var(--mut);font-size:13px">"Other cost (packaging)" is per-unit and is subtracted from profit for every delivered unit.</p>
-  ${skus.length?`<table><tr><th>SKU</th><th>Cost ₹</th><th>Other cost (packaging) ₹</th><th>Owner</th></tr>${skus.map(s=>`<tr><td>${s}</td>
-  <td><input value="${S.skuCost[s]||""}" onchange="S.skuCost['${s}']=num(this.value);save()"></td>
-  <td><input value="${S.skuPack[s]||""}" onchange="S.skuPack['${s}']=num(this.value);save()"></td>
-  <td><select onchange="S.skuOwner['${s}']=this.value;save()"><option${S.skuOwner[s]!=="o2"?" selected":""}>o1</option><option${S.skuOwner[s]==="o2"?" selected":""}>o2</option></select></td></tr>`).join("")}</table>`:"<p style='color:var(--mut)'>No SKUs yet.</p>"}</div>`}
-function vOther(){return `<div class="card"><h2>Other cost ledger</h2>
-  <div class="row"><div><label>Date</label><br><input type="date" id="ocd"></div><div><label>Amount ₹</label><br><input type="number" id="oca"></div><div><label>Note</label><br><input id="ocn"></div><button class="btn" onclick="S.otherCosts.push({date:ocd.value,amount:num(oca.value),note:ocn.value});save();render()">Add</button></div>
-  <h3>${S.otherCosts.length} entries — ${fmt(S.otherCosts.reduce((a,c)=>a+c.amount,0))}</h3>
-  ${S.otherCosts.length?`<table><tr><th>Date</th><th>Amount</th><th>Note</th></tr>${S.otherCosts.map(c=>`<tr><td>${dmy(c.date)}</td><td>${fmt(c.amount)}</td><td>${c.note||""}</td></tr>`).join("")}</table>`:"<p style='color:var(--mut)'>No entries yet.</p>"}</div>`}
-function vStock(){const skus=[...new Set(S.orders.map(o=>o.sku).filter(Boolean))];
-  return `<div class="card"><h2>Stock on hand</h2>
-  ${skus.length?`<table><tr><th>SKU</th><th>Current stock</th><th>Sold (delivered)</th><th>Status</th></tr>${skus.map(s=>{const sold=S.orders.filter(o=>o.sku===s&&o.status==="Delivered").reduce((a,o)=>a+o.qty,0);const low=(S.stock[s]||0)<=S.settings.lowStock;
-  return `<tr><td>${s}</td><td><input value="${S.stock[s]??""}" onchange="S.stock['${s}']=num(this.value);save();render()"></td><td>${sold}</td><td>${low?'<span class="neg">⚠ Low stock</span>':"OK"}</td></tr>`}).join("")}</table>`:"<p style='color:var(--mut)'>No SKUs yet.</p>"}</div>`}
-function vReturns(){const r=S.orders.filter(o=>o.status==="Customer Return");
-  return `<div class="card"><h2>Customer returns (${r.length})</h2>
-  <p style="color:var(--mut);font-size:13px">"Actual from payment file" is the deduction Meesho made (negative value). It's used automatically when the payment file covers that order; otherwise the default loss from Settings applies. Total is deducted from Net Profit.</p>
-  ${r.length?`<table><tr><th>Sub Order</th><th>SKU</th><th>Actual from payment file</th><th>Loss applied ₹</th></tr>${r.map(o=>{const s=S.settlements.find(x=>x.subOrder===o.subOrder);
-  return `<tr><td>${o.subOrder}</td><td>${o.sku}</td><td>${s&&s.amount<0?`<span class="neg">${fmt(s.amount)}</span>`:"—"}</td>
-  <td><input value="${returnLossFor(o)}" onchange="S.orders.find(x=>x.subOrder==='${o.subOrder}').loss=num(this.value);save();render()"></td></tr>`}).join("")}
-  <tr><td colspan="3"><b>Total return loss (deducted from profit)</b></td><td><b class="neg">${fmt(r.reduce((a,o)=>a+returnLossFor(o),0))}</b></td></tr></table>`:"<p style='color:var(--mut)'>No customer returns uploaded yet.</p>"}</div>`}
+function vUpload(){return '<div class="card"><h2>Upload your Meesho exports</h2>'+
+ '<p style="color:var(--mut);font-size:13px;margin-bottom:12px">Orders CSV/XLSX + payment file (all sheets picked up automatically — return deductions from the payment file are used as the actual return loss). Duplicates are skipped by Sub Order No. Nothing leaves your browser.</p>'+
+ '<div class="drop" id="dz">📄 Drag & drop your Meesho files here<br><small style="color:var(--mut)">— or click to browse —</small><input type="file" id="fp" multiple accept=".csv,.xlsx,.xls" style="display:none"></div>'+
+ '<div id="impMsg" class="msg"></div>'+
+ '<button class="btn gray" style="margin-top:12px" id="resetBtn">Reset this business\u2019s data</button></div>'}
+function vOrders(){const rows=S.orders.map(o=>"<tr><td>"+dmy(o.date)+"</td><td>"+esc(o.subOrder)+"</td><td>"+esc(o.sku)+"</td><td>"+o.qty+"</td><td>"+fmt(o.price*o.qty)+"</td><td>"+o.status+"</td></tr>").join("");
+  return '<div class="card"><h2>All orders ('+S.orders.length+')</h2>'+(S.orders.length?'<table><tr><th>Date</th><th>Sub Order</th><th>SKU</th><th>Qty</th><th>Sale</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No orders yet — upload in the Upload data tab.</p>")+'</div>'}
+function vCost(){
+  const skus=[...new Set(S.orders.map(o=>o.sku).filter(Boolean))];
+  let rows="";
+  skus.forEach(s=>{
+    rows+='<tr><td>'+esc(s)+'</td>'+
+    '<td><input data-sku="'+esc(s)+'" data-field="skuCost" value="'+(S.skuCost[s]!=null?S.skuCost[s]:"")+'"></td>'+
+    '<td><input data-sku="'+esc(s)+'" data-field="skuPack" value="'+(S.skuPack[s]!=null?S.skuPack[s]:"")+'"></td>'+
+    '<td><select data-sku="'+esc(s)+'" class="ownerSel"><option value="o1"'+(S.skuOwner[s]!=="o2"?" selected":"")+'>'+esc(S.settings.owner1)+'</option><option value="o2"'+(S.skuOwner[s]==="o2"?" selected":"")+'>'+esc(S.settings.owner2)+'</option></select></td></tr>';
+  });
+  return '<div class="card"><h2>Cost & owners</h2>'+
+  '<div class="row"><div><label>Owner 1 name</label><br><input id="o1" value="'+esc(S.settings.owner1)+'"></div>'+
+  '<div><label>Owner 2 name</label><br><input id="o2" value="'+esc(S.settings.owner2)+'"></div>'+
+  '<button class="btn" id="saveOwners">Save names</button></div>'+
+  '<h3>Product cost prices + packaging cost</h3>'+
+  '<p style="color:var(--mut);font-size:13px">"Other cost (packaging)" is per-unit and is subtracted from profit for every delivered unit.</p>'+
+  (skus.length?'<table><tr><th>SKU</th><th>Cost ₹</th><th>Other cost (packaging) ₹</th><th>Owner</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No SKUs yet.</p>")+'</div>';
+}
+function vOther(){return '<div class="card"><h2>Other cost ledger</h2>'+
+ '<div class="row"><div><label>Date</label><br><input type="date" id="ocd"></div><div><label>Amount ₹</label><br><input type="number" id="oca"></div><div><label>Note</label><br><input id="ocn"></div><button class="btn" id="addOc">Add</button></div>'+
+ '<h3>'+S.otherCosts.length+' entries — '+fmt(S.otherCosts.reduce((a,c)=>a+c.amount,0))+'</h3>'+
+ (S.otherCosts.length?'<table><tr><th>Date</th><th>Amount</th><th>Note</th></tr>'+S.otherCosts.map(c=>"<tr><td>"+dmy(c.date)+"</td><td>"+fmt(c.amount)+"</td><td>"+esc(c.note||"")+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>No entries yet.</p>")+'</div>'}
+function vStock(){
+  const skus=[...new Set(S.orders.map(o=>o.sku).filter(Boolean))];
+  let rows="";
+  skus.forEach(s=>{
+    const sold=S.orders.filter(o=>o.sku===s&&o.status==="Delivered").reduce((a,o)=>a+o.qty,0);
+    const low=(S.stock[s]||0)<=S.settings.lowStock;
+    rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+(S.stock[s]!=null?S.stock[s]:"")+'"></td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
+  });
+  return '<div class="card"><h2>Stock on hand</h2>'+(skus.length?'<table><tr><th>SKU</th><th>Current stock</th><th>Sold (delivered)</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No SKUs yet.</p>")+'</div>';
+}
+function vReturns(){
+  const r=S.orders.filter(o=>o.status==="Customer Return");
+  let rows="";
+  r.forEach(o=>{
+    const s=S.settlements.find(x=>x.subOrder===o.subOrder);
+    rows+='<tr><td>'+esc(o.subOrder)+'</td><td>'+esc(o.sku)+'</td><td>'+(s&&s.amount<0?'<span class="neg">'+fmt(s.amount)+'</span>':"—")+'</td>'+
+    '<td><input data-sub="'+esc(o.subOrder)+'" class="lossIn" value="'+returnLossFor(o)+'"></td></tr>';
+  });
+  return '<div class="card"><h2>Customer returns ('+r.length+')</h2>'+
+  '<p style="color:var(--mut);font-size:13px">"Actual from payment file" is the deduction Meesho made (negative value). It is used automatically when the payment file covers that order; otherwise the default loss from Settings applies. Total is deducted from Net Profit.</p>'+
+  (r.length?'<table><tr><th>Sub Order</th><th>SKU</th><th>Actual from payment file</th><th>Loss applied ₹</th></tr>'+rows+
+  '<tr><td colspan="3"><b>Total return loss (deducted from profit)</b></td><td><b class="neg">'+fmt(r.reduce((a,o)=>a+returnLossFor(o),0))+'</b></td></tr></table>':"<p style='color:var(--mut)'>No customer returns uploaded yet.</p>")+'</div>';
+}
 function vReceived(){const paid=S.settlements.filter(s=>s.scheduled);
-  return `<div class="card"><h2>Received payment (${paid.length}) — ${fmt(paid.reduce((a,s)=>a+s.amount,0))}</h2>
-  ${paid.length?`<table><tr><th>Sub Order</th><th>Settlement ₹</th></tr>${paid.map(s=>`<tr><td>${s.subOrder}</td><td class="${s.amount<0?'neg':''}">${fmt(s.amount)}</td></tr>`).join("")}</table>`:"<p style='color:var(--mut)'>No settlements yet — upload the payment file.</p>"}</div>`}
+  return '<div class="card"><h2>Received payment ('+paid.length+') — '+fmt(paid.reduce((a,s)=>a+s.amount,0))+'</h2>'+
+  (paid.length?'<table><tr><th>Sub Order</th><th>Settlement ₹</th></tr>'+paid.map(s=>"<tr><td>"+esc(s.subOrder)+"</td><td class='"+(s.amount<0?'neg':'')+"'>"+fmt(s.amount)+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>No settlements yet — upload the payment file.</p>")+'</div>'}
 function vPending(){const pd=S.orders.filter(o=>o.status==="Delivered"&&!S.settlements.find(s=>s.subOrder===o.subOrder&&s.scheduled));
-  return `<div class="card"><h2>Pending payment (${pd.length})</h2>
-  ${pd.length?`<table><tr><th>Sub Order</th><th>Est. ₹</th></tr>${pd.map(o=>`<tr><td>${o.subOrder}</td><td>${fmt(o.price*o.qty)}</td></tr>`).join("")}</table>`:"<p style='color:var(--mut)'>Nothing pending — all delivered orders have settlements.</p>"}</div>`}
+  return '<div class="card"><h2>Pending payment ('+pd.length+')</h2>'+
+  (pd.length?'<table><tr><th>Sub Order</th><th>Est. ₹</th></tr>'+pd.map(o=>"<tr><td>"+esc(o.subOrder)+"</td><td>"+fmt(o.price*o.qty)+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>Nothing pending — all delivered orders have settlements.</p>")+'</div>'}
 function vSettings(){const s=S.settings;
-  return `<div class="card"><h2>Calculation settings</h2>
-  <div class="row">
-  <div><label>Shop name</label><br><input id="sn" value="${s.shopName||""}"><br><small style="color:var(--mut)">Editable — shows on dashboard & sidebar</small></div>
-  ${[["gstRate","GST rate %"],["returnLoss","Return default loss ₹"],["adsCost","Ads cost ₹"],["otherFlat","Other cost flat ₹"],["rtoLoss","RTO loss ₹"],["lowStock","Low stock alert"]].map(([k,l])=>`<div><label>${l}</label><br><input type="number" value="${s[k]}" onchange="S.settings.${k}=num(this.value);save();render()"></div>`).join("")}
-  <button class="btn" onclick="S.settings.shopName=sn.value;save();renderNav();render()">Save shop name</button>
-  </div>
-  <h3>Backup & restore</h3>
-  <button class="btn" onclick="dl()">⬇ Download backup (JSON)</button>
-  <label class="btn gray" style="display:inline-block">⬆ Restore backup<input type="file" accept=".json" style="display:none" onchange="rs(this)"></label>
-  <h3>Cloud database (optional)</h3>
-  <p style="color:var(--mut);font-size:13px">Data auto-saves in this browser. For cross-device sync, connect a free Supabase project and paste its URL + anon key here.</p>
-  <div class="row"><input id="su" placeholder="Supabase URL" value="${s.supabaseUrl}" style="flex:1;min-width:200px"><input id="sk" placeholder="Anon key" value="${s.supabaseKey}" style="flex:1;min-width:200px"><button class="btn" onclick="S.settings.supabaseUrl=su.value;S.settings.supabaseKey=sk.value;save();alert('Saved locally')">Save</button></div></div>`}
-function dl(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:"application/json"}));a.download="meesho-backup-"+new Date().toISOString().slice(0,10)+".json";a.click()}
-function rs(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{S=JSON.parse(r.result);save();renderNav();render();alert("Backup restored")}catch(e){alert("Invalid backup file")}};r.readAsText(f)}
+  return '<div class="card"><h2>Calculation settings</h2><div class="row">'+
+  '<div><label>Shop name</label><br><input id="sn" value="'+esc(s.shopName||"")+'"><br><small style="color:var(--mut)">Editable — shows on dashboard & sidebar</small></div>'+
+  [["gstRate","GST rate %"],["returnLoss","Return default loss ₹"],["adsCost","Ads cost ₹"],["otherFlat","Other cost flat ₹"],["rtoLoss","RTO loss ₹"],["lowStock","Low stock alert"]].map(p=>'<div><label>'+p[1]+'</label><br><input type="number" value="'+s[p[0]]+'" data-set="'+p[0]+'"></div>').join("")+
+  '<button class="btn" id="saveShop">Save shop name</button></div>'+
+  '<h3>Backup & restore</h3><button class="btn" id="dlBtn">⬇ Download backup (JSON)</button>'+
+  '<label class="btn gray" style="display:inline-block">⬆ Restore backup<input type="file" accept=".json" id="rsFile" style="display:none"></label>'+
+  '<h3>Cloud database (optional)</h3>'+
+  '<p style="color:var(--mut);font-size:13px">Data auto-saves in this browser. For cross-device sync, connect a free Supabase project and paste its URL + anon key here.</p>'+
+  '<div class="row"><input id="su" placeholder="Supabase URL" value="'+esc(s.supabaseUrl)+'" style="flex:1;min-width:200px"><input id="sk" placeholder="Anon key" value="'+esc(s.supabaseKey)+'" style="flex:1;min-width:200px"><button class="btn" id="saveCloud">Save</button></div></div>';
+}
 
-/* ============ DRAG & DROP WIRING ============ */
-document.addEventListener("dragover",e=>{if(cur!=="Upload data")return;e.preventDefault();dz?.classList.add("over")});
-document.addEventListener("dragleave",e=>{dz?.classList.remove("over")});
-document.addEventListener("drop",e=>{if(cur!=="Upload data")return;e.preventDefault();dz?.classList.remove("over");if(e.dataTransfer.files.length)handleFiles([...e.dataTransfer.files])});
-document.addEventListener("change",e=>{if(e.target.id==="fp"&&e.target.files.length)handleFiles([...e.target.files])});
-document.addEventListener("click",e=>{if(e.target.closest("#dz")&&!e.target.closest("input"))fp.click()});
+/* ============ EVENT WIRING (delegated — no fragile inline JS) ============ */
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.dataset&&t.dataset.sku&&(t.dataset.field==="skuCost"||t.dataset.field==="skuPack"))setCost(t.dataset.sku,t.dataset.field,t.value);
+  if(t.classList&&t.classList.contains("stockIn"))setStock(t.dataset.sku,t.value);
+  if(t.classList&&t.classList.contains("lossIn"))setLoss(t.dataset.sub,t.value);
+  if(t.dataset&&t.dataset.set){S.settings[t.dataset.set]=num(t.value);save();}
+});
+document.addEventListener("change",e=>{
+  const t=e.target;
+  if(t.classList&&t.classList.contains("ownerSel"))setOwner(t.dataset.sku,t.value);
+  if(t.id==="fp"&&t.files.length)handleFiles([...t.files]);
+  if(t.id==="rsFile"&&t.files.length)restore(t.files[0]);
+});
+document.addEventListener("click",e=>{
+  if(e.target.closest("#dz")&&!e.target.closest("input")){const fp=document.getElementById("fp");if(fp)fp.click();}
+  if(e.target.closest("#resetBtn")){if(confirm("Reset ALL data for this business?")){S={orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},dashMonth:"",settings:{...DEF_SETTINGS}};save();renderNav();render();}}
+  if(e.target.closest("#saveOwners")){S.settings.owner1=document.getElementById("o1").value;S.settings.owner2=document.getElementById("o2").value;save();render();}
+  if(e.target.closest("#addOc")){S.otherCosts.push({date:document.getElementById("ocd").value,amount:num(document.getElementById("oca").value),note:document.getElementById("ocn").value});save();render();}
+  if(e.target.closest("#saveShop")){S.settings.shopName=document.getElementById("sn").value;save();renderNav();render();}
+  if(e.target.closest("#dlBtn"))downloadBackup();
+  if(e.target.closest("#saveCloud")){S.settings.supabaseUrl=document.getElementById("su").value;S.settings.supabaseKey=document.getElementById("sk").value;save();alert("Saved locally");}
+});
+document.addEventListener("dragover",e=>{if(cur!=="Upload data")return;e.preventDefault();const dz=document.getElementById("dz");if(dz)dz.classList.add("over")});
+document.addEventListener("dragleave",()=>{const dz=document.getElementById("dz");if(dz)dz.classList.remove("over")});
+document.addEventListener("drop",e=>{if(cur!=="Upload data")return;e.preventDefault();const dz=document.getElementById("dz");if(dz)dz.classList.remove("over");if(e.dataTransfer.files.length)handleFiles([...e.dataTransfer.files])});
+function downloadBackup(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:"application/json"}));a.download="meesho-backup-"+new Date().toISOString().slice(0,10)+".json";a.click()}
+function restore(f){const r=new FileReader();r.onload=()=>{try{S=JSON.parse(r.result);S.settings={...DEF_SETTINGS,...(S.settings||{})};save();renderNav();render();alert("Backup restored")}catch(e){alert("Invalid backup file")}};r.readAsText(f)}
 
 renderNav();render();
 </script>
