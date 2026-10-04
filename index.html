@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rudra Enterprises</title>
+<title>Meesho Profit Portal</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
@@ -185,10 +185,13 @@ function calc(selMonth){
     w.packCost+=skuVal(S.skuPack,x.sku)*num(x.qty);
     w.orders++;
   });
+  const shared=other+ads+rtoLoss+retLoss+gst;
   Object.keys(owners).forEach(k=>{
     const w=owners[k];
-    w.profit=w.sale-w.productCost-w.packCost;
-    w.pct=Math.round((w.sale/(netSale||1))*100);
+    w.share=w.sale/(netSale||1);
+    w.sharedCost=w.share*shared; /* GST, ads, other, returns, RTO split by sale share */
+    w.profit=w.sale-w.productCost-w.packCost-w.sharedCost;
+    w.pct=Math.round(w.share*100);
   });
   return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o,ownerStats:owners};
 }
@@ -235,11 +238,11 @@ function vDash(){
   '</table></div>'+
   '<div class="card"><h2>Owner-wise performance</h2>'+
   (Object.keys(c.ownerStats||{}).length?
-    '<table><tr><th>Owner</th><th>Orders</th><th>Sale</th><th>Product Cost</th><th>Packaging</th><th>Direct Profit</th><th>% of Sale</th></tr>'+
+    '<table><tr><th>Owner</th><th>Orders</th><th>Sale</th><th>Product Cost</th><th>Packaging</th><th>Shared Costs</th><th>Net Profit</th><th>% of Sale</th></tr>'+
     Object.values(c.ownerStats).map(w=>
-      "<tr><td>"+esc(w.name)+"</td><td>"+w.orders+"</td><td>"+fmt(w.sale)+"</td><td>−"+fmt(w.productCost)+"</td><td>−"+fmt(w.packCost)+"</td><td class='"+(w.profit>=0?'pos':'neg')+"'>"+fmt(w.profit)+"</td><td>"+w.pct+"%</td></tr>"
+      "<tr><td>"+esc(w.name)+"</td><td>"+w.orders+"</td><td>"+fmt(w.sale)+"</td><td>−"+fmt(w.productCost)+"</td><td>−"+fmt(w.packCost)+"</td><td>−"+fmt(w.sharedCost)+"</td><td class='"+(w.profit>=0?'pos':'neg')+"'>"+fmt(w.profit)+"</td><td>"+w.pct+"%</td></tr>"
     ).join("")+'</table>'+
-    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Direct profit = owner\u2019s sale − their product cost − packaging. Common costs (GST, ads, other, returns, RTO) are shared business-level and shown separately above. Assign owners per SKU in the Cost & owners tab.</p>'
+    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Shared costs (GST, ads, other, returns, RTO) are split between owners in proportion to each owner\u2019s share of sale, so owner profits always add up to the total Net Profit above. Assign owners per SKU in the Cost & owners tab.</p>'
     :"<p style='color:var(--mut)'>No delivered orders in this period.</p>")+
   '</div>'+
   '<div class="card"><h3>Sales & orders trend</h3><canvas id="ch1" height="140"></canvas><h3 style="margin-top:16px">Order outcomes</h3><canvas id="ch2" height="140"></canvas><h3 style="margin-top:16px">Owner-wise sale share</h3><canvas id="ch3" height="140"></canvas></div>'+
