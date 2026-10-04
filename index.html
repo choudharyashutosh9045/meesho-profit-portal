@@ -1,1893 +1,277 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Meesho Profit Portal</title>
-<meta name="description" content="Upload your Meesho seller exports and see Sale, Cost, GST, RTO, Returns and Net Profit in one dashboard — runs entirely in your browser." />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meesho Seller Manager — Desktop</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
-  :root{
-    --base:#F3F5FA; --surface:#FFFFFF; --surface2:#EEF1F8; --line:#E1E5F0; --gold:#2454C7;
-    --teal:#157347; --alert:#B42318; --ink:#12162B; --muted:#5B6478; --spine:#0E1330;
-    --paper-ink:#FFFFFF;
-    box-sizing:border-box;
-    padding-top: env(safe-area-inset-top,0px);
-    padding-bottom: env(safe-area-inset-bottom,0px);
-  }
-  *{box-sizing:inherit}
-  html,body{margin:0;min-height:100%;-webkit-font-smoothing:antialiased;}
-  body{background:var(--base);color:var(--ink);font-family:"Inter",sans-serif;}
-  h1,h2,.display{font-family:"Space Grotesk",sans-serif;font-weight:600;letter-spacing:-0.01em;}
-  .tabular{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;}
-  .wrap{max-width:1180px;margin:0 auto;padding:0 20px;}
-  .card{border:1px solid var(--line);background:var(--surface);border-radius:10px;box-shadow:0 1px 2px rgba(16,22,43,0.05);}
-  .muted{color:var(--muted);}
-  .gold{color:var(--gold);}
-  .teal{color:var(--teal);}
-  .alert{color:var(--alert);}
-  button{font-family:inherit;cursor:pointer;}
-  input,select{font-family:"IBM Plex Mono",monospace;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 9px;outline:none;font-size:13px;}
-  input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(36,84,199,0.12);}
-  .icon{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block;}
-  .btn-owner{padding:6px 12px;border-radius:6px;font-size:13px;border:1px solid var(--line);background:var(--surface2);color:var(--muted);font-family:"Inter",sans-serif;}
-  .btn-owner.active{background:var(--gold);color:var(--paper-ink);border-color:var(--gold);font-weight:600;}
-  .app-header .btn-owner{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.75);border-color:rgba(255,255,255,0.18);}
-  .app-header .btn-owner.active{background:var(--gold);color:#fff;border-color:var(--gold);}
-  .btn-ghost{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:6px;font-size:12.5px;border:1px solid var(--line);background:transparent;color:var(--muted);}
-  .btn-ghost:hover{color:var(--ink);border-color:var(--muted);}
-  .btn-ghost.danger:hover{color:var(--alert);border-color:var(--alert);}
-  .btn-gold{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:13px;border:none;background:var(--gold);color:var(--paper-ink);font-weight:600;}
-  .upload-slot{width:100%;display:flex;flex-direction:column;align-items:center;gap:7px;border:1px dashed var(--line);border-radius:8px;padding:18px 8px;background:transparent;color:var(--ink);}
-  .upload-slot:hover{border-color:var(--gold);background:rgba(36,84,199,0.04);}
-  .grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
-  @media(min-width:700px){.grid4{grid-template-columns:repeat(4,1fr);}}
-  .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
-  @media(min-width:700px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
-  table{width:100%;border-collapse:collapse;font-size:13px;}
-  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);}
-  th{color:var(--muted);font-weight:600;font-size:12px;}
-  tbody tr:hover{background:rgba(36,84,199,0.035);}
-  .cols2{display:grid;grid-template-columns:1fr;gap:18px;}
-  @media(min-width:900px){.cols2{grid-template-columns:2fr 1fr;}}
-  .chartbox{position:relative;height:230px;}
-  .layout{display:flex;flex-direction:column;gap:0;align-items:flex-start;}
-  @media(min-width:860px){.layout{flex-direction:row;gap:24px;}}
-  .panels{min-width:0;flex:1;}
-  .sidebar{display:flex;flex-direction:row;gap:4px;overflow-x:auto;background:var(--spine);border-radius:10px;padding:6px;margin-bottom:18px;width:100%;}
-  @media(min-width:860px){
-    .sidebar{flex-direction:column;width:208px;flex-shrink:0;position:sticky;top:88px;margin-bottom:0;padding:10px;gap:2px;}
-  }
-  .tabbtn{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:13.5px;font-weight:500;color:rgba(255,255,255,0.6);white-space:nowrap;background:none;border:none;border-radius:7px;}
-  .tabbtn.active{color:#fff;background:var(--gold);font-weight:600;}
-  .app-header .muted{color:rgba(255,255,255,0.55);}
-  .app-header .display{color:#fff;}
-  .app-header{background:var(--spine);border-bottom:1px solid rgba(255,255,255,0.08);}
-  .tabpanel{display:none;}
-  .tabpanel.active{display:block;}
-  .kpi{padding:16px;display:flex;flex-direction:column;gap:8px;}
-  .hero{border:1px solid var(--line);border-radius:12px;padding:24px 26px;background:linear-gradient(160deg, rgba(36,84,199,0.07), rgba(21,115,71,0.03) 65%, var(--surface));position:relative;overflow:hidden;}
-  .hero::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--gold);}
-  .hero-chip{background:var(--surface2);border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:12px;display:flex;align-items:center;gap:6px;}
-  .kpi-top{display:flex;justify-content:space-between;align-items:flex-start;}
-  .kpi-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .badge{font-size:10.5px;padding:2px 7px;border-radius:20px;background:var(--surface2);color:var(--muted);}
+:root{--p:#7b2ff7;--g:#22c55e;--r:#ef4444;--bg:#f4f2fa;--mut:#6b7280}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,sans-serif}
+body{background:var(--bg);color:#1e1b2e;display:flex;min-height:100vh}
+aside{width:230px;background:#241b3a;color:#fff;padding:18px 14px;position:sticky;top:0;height:100vh;flex-shrink:0}
+aside h1{font-size:18px}aside .sub{font-size:10px;color:#c4b5fd;margin-bottom:20px}
+nav button{display:block;width:100%;text-align:left;background:none;border:0;color:#d1d5db;padding:11px 14px;border-radius:9px;margin-bottom:4px;cursor:pointer;font-size:14px}
+nav button:hover{background:rgba(123,47,247,.3)}nav button.on{background:var(--p);color:#fff;font-weight:600}
+aside .foot{margin-top:auto;font-size:9px;color:#8b7bb8}
+main{flex:1;padding:24px 28px;max-width:1400px;min-width:0}
+.top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+h2{font-size:22px}
+.badge{font-size:10px;padding:3px 9px;border-radius:99px;font-weight:600}
+.b-new{background:#dbeafe;color:#1d4ed8}.b-shipped{background:#fef3c7;color:#92400e}.b-del{background:#dcfce7;color:#166534}.b-rto{background:#fee2e2;color:#991b1b}.b-ret{background:#fce7f3;color:#9d174d}.b-canc{background:#e5e7eb;color:#374151}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.card{background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 5px rgba(0,0,0,.07)}
+.card .l{font-size:11px;color:var(--mut)}.card .v{font-size:22px;font-weight:700;margin-top:4px}
+.card .v.neg{color:var(--r)}.card .v.pos{color:var(--g)}.card .d{font-size:10px;color:var(--mut);margin-top:4px}
+.grid2{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+.panel{background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:16px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{background:#f3eefc;text-align:left;padding:9px 10px;color:#5b21b6;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+td{padding:9px 10px;border-top:1px solid #f0eaf8;white-space:nowrap}tr:hover td{background:#faf8ff}
+button.act{background:var(--p);color:#fff;border:0;padding:10px 18px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600}
+button.sm{padding:4px 9px;font-size:11px;background:#f3eefc;color:var(--p);border:0;border-radius:6px;cursor:pointer}
+input,select{padding:9px 12px;border:1px solid #ddd;border-radius:9px;font-size:13px}
+.formrow{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+label{font-size:11px;color:var(--mut);display:block;margin-bottom:3px}
+.empty{text-align:center;color:var(--mut);padding:30px;font-size:13px}
+.warn{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:11px 14px;border-radius:11px;font-size:12.5px;margin-bottom:14px}
+.okmsg{background:#f0fdf4;border:1px solid #86efac;color:#166534;padding:11px 14px;border-radius:11px;font-size:12.5px;margin-bottom:14px}
+.chartwrap{position:relative;height:280px}
+.pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;margin:3px}
+.searchrow{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}.searchrow input{flex:1;min-width:220px}
+.slot{border:2px dashed #c4b5fd;border-radius:12px;padding:14px;margin-bottom:10px;background:#faf8ff;transition:border-color .2s}
+.slot:hover{border-color:var(--p)}
+.slot h4{font-size:13px;margin-bottom:4px}
+.slot .hint{font-size:11px;color:var(--mut)}
+.slot .done{font-size:12px;color:#166534;font-weight:600}
+#dragOverlay{display:none;position:fixed;inset:0;background:rgba(123,47,247,.15);z-index:98;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:var(--p)}
 </style>
 </head>
 <body>
-
-<!-- shared icon defs -->
-<svg width="0" height="0" style="position:absolute">
-<defs>
-<symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></symbol>
-<symbol id="ic-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></symbol>
-<symbol id="ic-tag" viewBox="0 0 24 24"><path d="M20 12l-8 8-9-9V4h7z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></symbol>
-<symbol id="ic-return" viewBox="0 0 24 24"><path d="M3 10h11a5 5 0 0 1 0 10H9M3 10l4-4M3 10l4 4"/></symbol>
-<symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.36.4.68.75.86.28.15.6.23.94.23H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.91z"/></symbol>
-<symbol id="ic-rupee" viewBox="0 0 24 24"><path d="M6 4h12M6 9h12M6 4c4 0 8 1 8 5s-4 5-8 5l8 6"/></symbol>
-<symbol id="ic-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></symbol>
-<symbol id="ic-trend" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M17 7h4v4"/></symbol>
-<symbol id="ic-percent" viewBox="0 0 24 24"><path d="M19 5L5 19M6.5 8.5A2 2 0 1 0 6.5 4.5 2 2 0 0 0 6.5 8.5zM17.5 19.5A2 2 0 1 0 17.5 15.5 2 2 0 0 0 17.5 19.5z"/></symbol>
-<symbol id="ic-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
-<symbol id="ic-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
-<symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
-<symbol id="ic-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
-<symbol id="ic-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></symbol>
-<symbol id="ic-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
-<symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
-<symbol id="ic-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
-<symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></symbol>
-<symbol id="ic-bank" viewBox="0 0 24 24"><path d="M3 21h18M4 10h16M4 10l8-6 8 6M6 10v8M10 10v8M14 10v8M18 10v8"/></symbol>
-<symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-</defs>
-</svg>
-
-<div class="app-header" style="position:sticky;top:0;z-index:10;">
-  <div class="wrap" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding-top:16px;padding-bottom:0;">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <div style="width:34px;height:34px;border-radius:8px;background:var(--gold);display:flex;align-items:center;justify-content:center;">
-        <svg class="icon" style="stroke:#fff;width:18px;height:18px;"><use href="#ic-box"/></svg>
-      </div>
-      <div>
-        <div class="display" style="font-size:17px;font-weight:700;">Meesho Profit Portal</div>
-        <div class="muted" id="dataMeta" style="font-size:11.5px;">No data uploaded yet</div>
-      </div>
-    </div>
-    <div id="ownerBar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:14px;"></div>
-  </div>
-</div>
-
-<div class="wrap layout" style="padding-top:20px;padding-bottom:40px;">
-
-  <div class="sidebar" id="tabbar">
-    <button class="tabbtn active" data-tab="dashboard"><svg class="icon"><use href="#ic-grid"/></svg>Dashboard</button>
-    <button class="tabbtn" data-tab="upload"><svg class="icon"><use href="#ic-upload"/></svg>Upload data</button>
-    <button class="tabbtn" data-tab="orders"><svg class="icon"><use href="#ic-grid"/></svg>All orders</button>
-    <button class="tabbtn" data-tab="costs"><svg class="icon"><use href="#ic-tag"/></svg>Cost &amp; owners</button>
-    <button class="tabbtn" data-tab="othercost"><svg class="icon"><use href="#ic-plus"/></svg>Other cost</button>
-    <button class="tabbtn" data-tab="stock"><svg class="icon"><use href="#ic-box"/></svg>Stock</button>
-    <button class="tabbtn" data-tab="returns"><svg class="icon"><use href="#ic-return"/></svg>Returns</button>
-    <button class="tabbtn" data-tab="received"><svg class="icon"><use href="#ic-check"/></svg>Received payment</button>
-    <button class="tabbtn" data-tab="pending"><svg class="icon"><use href="#ic-clock"/></svg>Pending payment</button>
-    <button class="tabbtn" data-tab="settings"><svg class="icon"><use href="#ic-gear"/></svg>Settings</button>
-  </div>
-
-  <div class="panels">
-
-  <!-- DASHBOARD -->
-  <div class="tabpanel active" id="panel-dashboard">
-    <div class="card" style="padding:14px 18px;margin-bottom:18px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;">
-      <div>
-        <div class="muted" style="font-size:11px;margin-bottom:4px;">From</div>
-        <input type="date" id="dateFromInput"/>
-      </div>
-      <div>
-        <div class="muted" style="font-size:11px;margin-bottom:4px;">To</div>
-        <input type="date" id="dateToInput"/>
-      </div>
-      <button class="btn-gold" id="applyFilterBtn">Apply filter</button>
-      <button class="btn-ghost" id="clearFilterBtn">Clear</button>
-    </div>
-    <div id="summaryCard" style="margin-bottom:18px;"></div>
-    <div id="statusRow" class="kpi-grid" style="margin-bottom:18px;"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
-      <div class="display" style="font-size:15px;font-weight:600;">Profit &amp; loss</div>
-      <button class="btn-ghost" id="exportBtn"><svg class="icon"><use href="#ic-download"/></svg>Export summary CSV</button>
-    </div>
-    <div class="kpi-grid" id="kpiGrid" style="margin-bottom:18px;"></div>
-    <div class="card" style="padding:18px;margin-bottom:18px;">
-      <div class="chartbox" style="height:250px;"><canvas id="trendChart"></canvas></div>
-    </div>
-    <div class="card" style="padding:18px;margin-bottom:18px;">
-      <div class="cols2" style="gap:20px;">
-        <div class="chartbox"><canvas id="financeChart"></canvas></div>
-        <div class="chartbox"><canvas id="outcomeChart"></canvas></div>
-      </div>
-    </div>
-    <div class="cols2" style="margin-bottom:18px;">
-      <div id="ownerPerfTable"></div>
-      <div id="rateCard"></div>
-    </div>
-    <div id="ownerSplit" style="margin-bottom:18px;"></div>
-    <div class="cols2">
-      <div class="card" style="padding:18px;">
-        <div style="font-size:13px;font-weight:500;">Meesho payout on record</div>
-        <div class="muted" style="font-size:11.5px;margin:5px 0 8px;">Sum of Final Settlement Amount from the payment file — a cross-check against the profit calc above.</div>
-        <div class="display teal tabular" id="settlementVal" style="font-size:20px;font-weight:700;">₹0</div>
-      </div>
-      <div class="card" id="reconcileCard" style="padding:18px;"></div>
-    </div>
-  </div>
-
-  <!-- UPLOAD -->
-  <div class="tabpanel" id="panel-upload">
-    <div class="card" style="padding:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <div style="font-size:14px;font-weight:600;">Upload your 4 Meesho exports</div>
-        <button class="btn-ghost danger" id="resetBtn"><svg class="icon"><use href="#ic-trash"/></svg>Reset this business's data</button>
-      </div>
-      <div class="grid4" id="uploadGrid"></div>
-      <div class="muted" style="font-size:11.5px;margin-top:12px;">Upload as many times as you like — orders and returns already counted (by Sub Order No) are always skipped, so only new ones get added. The payment file also picks up Ads Cost, Referral Payments and Compensation/Recovery sheets when present, and separates out "unscheduled" settlements that Meesho hasn't paid yet. Nothing leaves your browser.</div>
-    </div>
-  </div>
-
-  <!-- ALL ORDERS -->
-  <div class="tabpanel" id="panel-orders">
-    <div class="card" id="ordersPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- COSTS -->
-  <div class="tabpanel" id="panel-costs">
-    <div class="card" style="padding:18px;margin-bottom:18px;">
-      <div style="font-size:14px;font-weight:600;margin-bottom:10px;">Owners for this business</div>
-      <div class="muted" style="font-size:11.5px;margin-bottom:10px;">Assign each SKU below to one of these two owners to split sale/cost/profit item-wise.</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <input id="owner1Name" style="flex:1;min-width:160px;"/>
-        <input id="owner2Name" style="flex:1;min-width:160px;"/>
-      </div>
-    </div>
-    <div class="card" id="costPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- OTHER COST -->
-  <div class="tabpanel" id="panel-othercost">
-    <div class="card" id="otherCostPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- STOCK -->
-  <div class="tabpanel" id="panel-stock">
-    <div class="card" id="stockPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- RETURNS -->
-  <div class="tabpanel" id="panel-returns">
-    <div class="card" id="returnsPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- RECEIVED PAYMENT -->
-  <div class="tabpanel" id="panel-received">
-    <div class="card" id="receivedPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- PENDING PAYMENT -->
-  <div class="tabpanel" id="panel-pending">
-    <div class="card" id="pendingPanel" style="padding:0;"></div>
-  </div>
-
-  <!-- SETTINGS -->
-  <div class="tabpanel" id="panel-settings">
-    <div class="card" style="padding:20px;max-width:480px;">
-      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Calculation settings</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
-        <div>
-          <div style="font-size:13px;">GST rate</div>
-          <div class="muted" style="font-size:11.5px;">Extracted from GST-inclusive sale price</div>
-        </div>
-        <div><input type="number" id="gstInput" style="width:64px;text-align:right;" class="tabular"/> %</div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
-        <div>
-          <div style="font-size:13px;">Customer return — default loss</div>
-          <div class="muted" style="font-size:11.5px;">Fallback guess until a payment file covers that order — then the real Meesho amount is filled in automatically (editable per order in Returns tab)</div>
-        </div>
-        <div>₹ <input type="number" id="crFlatInput" style="width:64px;text-align:right;" class="tabular"/></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
-        <div>
-          <div style="font-size:13px;">Ads cost</div>
-          <div class="muted" style="font-size:11.5px;">Total ad spend for the period — subtracted once from Net Profit</div>
-        </div>
-        <div>₹ <input type="number" id="adsCostInput" style="width:64px;text-align:right;" class="tabular"/></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;">
-        <div>
-          <div style="font-size:13px;">Other cost (flat)</div>
-          <div class="muted" style="font-size:11.5px;">Quick one-number catch-all — for itemised entries with dates, use the "Other cost" tab instead</div>
-        </div>
-        <div>₹ <input type="number" id="otherCostInput" style="width:64px;text-align:right;" class="tabular"/></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <div>
-          <div style="font-size:13px;">RTO loss</div>
-          <div class="muted" style="font-size:11.5px;">Configured as no loss — RTOs don't reduce Net Profit</div>
-        </div>
-        <div class="muted tabular" style="font-size:13px;">₹0 fixed</div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--line);padding-top:16px;margin-top:16px;">
-        <div>
-          <div style="font-size:13px;">Low stock alert</div>
-          <div class="muted" style="font-size:11.5px;">Flag a SKU as low stock when quantity falls to or below this</div>
-        </div>
-        <div><input type="number" id="lowStockInput" style="width:64px;text-align:right;" class="tabular"/> units</div>
-      </div>
-    </div>
-
-    <div class="card" style="padding:20px;max-width:480px;margin-top:18px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <div style="font-size:14px;font-weight:600;">Cloud database (optional)</div>
-        <span id="syncStatus" class="badge">Local only</span>
-      </div>
-      <div class="muted" style="font-size:11.5px;margin-bottom:14px;">
-        Without this, data only lives in this browser. Connect a free
-        <a href="https://supabase.com" target="_blank" rel="noopener" style="color:var(--gold);">Supabase</a>
-        project to sync across devices and keep a real backup. Run the SQL below once in your
-        project's SQL Editor, then paste your Project URL and anon public key here.
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
-        <input id="supabaseUrlInput" placeholder="https://xxxx.supabase.co" style="width:100%;"/>
-        <input id="supabaseKeyInput" placeholder="anon public key" style="width:100%;"/>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;">
-        <button class="btn-gold" id="saveSupabaseBtn">Connect</button>
-        <button class="btn-ghost danger" id="disconnectSupabaseBtn">Disconnect</button>
-      </div>
-      <details>
-        <summary style="cursor:pointer;font-size:12.5px;color:var(--muted);">Show setup SQL</summary>
-        <pre id="supabaseSql" style="white-space:pre-wrap;font-size:10.5px;background:var(--base);border:1px solid var(--line);border-radius:6px;padding:10px;margin-top:8px;max-height:200px;overflow-y:auto;">create table if not exists business_data (
-  business text primary key,
-  data jsonb not null,
-  updated_at timestamptz default now()
-);
-alter table business_data enable row level security;
-create policy "anon can read/write business_data"
-  on business_data for all using (true) with check (true);</pre>
-        <button class="btn-ghost" id="copySqlBtn" style="margin-top:6px;">Copy SQL</button>
-      </details>
-    </div>
-  </div>
-
-  </div>
-</div>
-
+<div id="dragOverlay">📥 Drop your Meesho files here…</div>
+<aside>
+<h1>📦 Meesho Manager</h1><div class="sub">KHUSHI · Supplier 4732217</div>
+<nav id="nav"></nav>
+<div class="foot">💾 Auto-saves in this browser<br>Backup regularly from Backup tab</div>
+</aside>
+<main><div id="view"></div></main>
 <script>
-// ---------- storage ----------
-const OWNERS_KEY = "mpp_owners_v3";
-const CURRENT_KEY = "mpp_current_owner_v3";
-const dataKey = (o) => "mpp_data_v3_" + o;
+const KEY='msm_desktop',uid=()=>Date.now()+'_'+Math.floor(Math.random()*999);
+const fmt=n=>'₹'+(Math.round((n||0)*100)/100).toLocaleString('en-IN',{maximumFractionDigits:2});
+const D=s=>s?s.split('-').reverse().join('-'):'—';
+const STATUS=['New','Shipped','Delivered','Cancelled','RTO','Customer Return','Refund'];
+const BC={New:'b-new',Shipped:'b-shipped',Delivered:'b-del',RTO:'b-rto','Customer Return':'b-ret',Cancelled:'b-canc',Refund:'b-canc'};
 
-function emptyData(){
-  return {
-    orders: [], returns: [], payments: [], outstanding: [],
-    adsCostRows: [], referralRows: [], compensationRows: [], otherCosts: [],
-    costs: {}, returnCosts: {}, returnCostsAuto: {}, stock: {},
-    subOwners: ["Owner 1", "Owner 2"],
-    settings: { gstPercent: 18, customerReturnFlatLoss: 170, adsCost: 0, otherCost: 0, lowStockThreshold: 5, actualBankReceived: 0 }
-  };
+// ===== REAL SEED DATA (from your 4 uploaded Meesho files) =====
+function seed(){
+const P=[['KBK PORTABLE MULTIMEDIA SPEAKER','lFFbtqdE',450],['Magnetic Wireless Charger 15W','fzU3N0ZM',377],['TAXICO SUPER FAST USB CHARGER','wgbFrzDz',259],['MOBILE COOLING MAHNETIC','SQwpwvp6',760],['BULLETS WIRELESS Z2 ANC','s5ugWwaf',339],['BUDS PRO 3','aKgHMgsi',0],['KBK PORTABLE WIRELESS SPEAKER','uY9zXJac',360],['LED Halogen Light 50W Pack3','gL3ECVOc',216],['50W LED Flood Light','03OSmiMb',0],['120W FAST CHARGER','tvdky-9o7L0j0LYwJT',340],['KBK SPEAKER RGB','C_pLE5W2',0],['HALOZER 9W BULB','tvdky-jgDsPwLOI9oa',0],['50W Flood B22','tvdky-A83lWgN2P43p',0],['50W Flood AluPlate','9ybjpxYS',0],['Wireless TWS Earbuds','tvdky-v3nTGSD9r17h',0],['Mobile holder','Gg-EtMCK',0],['CYOMI SPEAKER ROSE','Gla724dq',0]];
+const products=P.map((p,i)=>({id:'P'+(i+1),name:p[0],sku:p[1],gst:18,price:p[2],cost:0,stock:0,lowAt:5}));
+const M={};products.forEach(p=>M[p.sku]=p.id);
+const orders=[];const add=(id,dt,sku,sale,st,src,x)=>{if(!M[sku]||orders.some(o=>o.id===id))return;
+orders.push(Object.assign({id,date:D(dt),prod:M[sku],qty:1,sale,net:null,status:st,src,txn:'',payDate:'',reason:'',state:''},x||{}));};
+add('324435580178461440_1','27-08-2026','lFFbtqdE',548,'RTO','Payment File',{price:450,net:0,txn:'AXISCN1453327166',payDate:'01-09-2026',payDetail:'Sale 548 · Return −548 · Final 0'});
+add('324043536414662528_1','26-08-2026','lFFbtqdE',569,'RTO','Payment File',{price:469,net:0,txn:'AXISCN1453327166',payDate:'01-09-2026',payDetail:'Sale 569 · Return −569 · Final 0'});
+add('323119262746426752_1','23-08-2026','fzU3N0ZM',475,'RTO','Payment File',{price:377,net:0,txn:'AXISCN1453327166',payDate:'01-09-2026',payDetail:'Sale 475 · Return −475 · Final 0'});
+add('323016804162503616_1','23-08-2026','fzU3N0ZM',488,'RTO','Payment File',{price:399,net:0,txn:'AXISCN1453327166',payDate:'01-09-2026',payDetail:'Sale 488 · Return −488 · Final 0'});
+add('322387665185353024_1','21-08-2026','wgbFrzDz',290.47,'RTO','Payment File',{price:259,net:0,txn:'AXISCN1453327166',payDate:'01-09-2026',payDetail:'Sale 290.47 · Return −290.47 · Final 0'});
+[['336971976290866304_1','01-10-2026','lFFbtqdE',469,'New','Andaman & Nicobar'],['337086845271222976_1','01-10-2026','lFFbtqdE',469,'Shipped','Maharashtra'],['337088110418920064_1','01-10-2026','SQwpwvp6',760,'Cancelled','Telangana'],['337108402025464448_1','01-10-2026','lFFbtqdE',469,'Shipped','Bihar'],['337148972430339776_1','01-10-2026','s5ugWwaf',339,'Shipped','Bihar'],['337181182003709760_1','01-10-2026','lFFbtqdE',469,'Shipped','Karnataka'],['337194718572496832_1','01-10-2026','SQwpwvp6',760,'Shipped','Karnataka'],['337208799491861184_1','01-10-2026','SQwpwvp6',760,'Cancelled','Karnataka'],['337209379039357056_1','01-10-2026','uY9zXJac',360,'Shipped','Karnataka'],['337214691827173312_1','01-10-2026','SQwpwvp6',760,'Shipped','Karnataka'],['337249617434979008_1','01-10-2026','lFFbtqdE',450,'New','Puducherry'],['337470571061642816_1','02-10-2026','lFFbtqdE',469,'New','Odisha'],['337541655846897600_1','02-10-2026','gL3ECVOc',216,'Cancelled','Rajasthan'],['337568306540513088_1','02-10-2026','lFFbtqdE',469,'New','Uttar Pradesh'],['337577339746658432_1','02-10-2026','tvdky-9o7L0j0LYwJT',340,'New','Tamil Nadu'],['337586058009445696_1','02-10-2026','lFFbtqdE',450,'New','Maharashtra'],['337619805006656512_1','02-10-2026','s5ugWwaf',339,'New','Karnataka'],['337756043734873088_1','03-10-2026','lFFbtqdE',469,'New','Andhra Pradesh']].forEach(r=>add(r[0],r[1],r[2],r[3],r[4],'Order Report',{state:r[5]}));
+[['gL3ECVOc','333161816438125376_1','20-09-2026','01-10-2026','Customer Return',"Don't need anymore"],['aKgHMgsi','335075622961202368_1','26-09-2026','01-10-2026','Customer Return','Wrong product'],['fzU3N0ZM','333500364075520832_1','25-09-2026','01-10-2026','Customer Return','Defective'],['gL3ECVOc','333596325499907648_1','25-09-2026','01-10-2026','Customer Return','Lower price elsewhere'],['fzU3N0ZM','333570012957250114_1','25-09-2026','30-09-2026','Customer Return','Wrong product'],['fzU3N0ZM','335259898423196800_1','26-09-2026','30-09-2026','Customer Return','Wrong product'],['gL3ECVOc','332533273103635584_1','20-09-2026','29-09-2026','RTO','forward_RTO'],['Gla724dq','331111613695692302_1','15-09-2026','29-09-2026','Customer Return','Quality issue'],['aKgHMgsi','334867090696748096_1','25-09-2026','29-09-2026','RTO','forward_RTO'],['lFFbtqdE','332799794335628608_1','20-09-2026','27-09-2026','Customer Return','Incomplete product'],['lFFbtqdE','332471645075968960_1','20-09-2026','26-09-2026','RTO','forward_RTO'],['SQwpwvp6','332905210987237952_1','20-09-2026','26-09-2026','RTO','forward_RTO'],['03OSmiMb','320964742989908032_1','22-08-2026','04-09-2026','RTO','forward_RTO'],['lFFbtqdE','331024884973063872_1','15-09-2026','26-09-2026','Customer Return','Quality issue'],['SQwpwvp6','332089146310297088_1','19-09-2026','25-09-2026','Customer Return','Size/fit issue'],['fzU3N0ZM','331316233818769600_1','15-09-2026','25-09-2026','Customer Return','Quality issue'],['fzU3N0ZM','332190807334069632_1','19-09-2026','25-09-2026','Customer Return','Ordered by mistake'],['fzU3N0ZM','333109604260166912_1','20-09-2026','25-09-2026','Customer Return','Quality issue'],['fzU3N0ZM','333060536468147136_1','20-09-2026','24-09-2026','Customer Return','Defective'],['fzU3N0ZM','332901308409664064_1','20-09-2026','24-09-2026','Customer Return','Quality issue'],['lFFbtqdE','332196746287733888_1','19-09-2026','23-09-2026','Customer Return','Quality issue'],['fzU3N0ZM','332087726778391168_1','19-09-2026','23-09-2026','Customer Return','Quality issue'],['fzU3N0ZM','331009353565243328_1','15-09-2026','21-09-2026','Customer Return','Quality issue'],['lFFbtqdE','332761169010840512_1','20-09-2026','26-09-2026','RTO','forward_RTO'],['fzU3N0ZM','333069889526991808_1','20-09-2026','26-09-2026','RTO','forward_RTO'],['gL3ECVOc','332760032924881792_1','20-09-2026','26-09-2026','RTO','forward_RTO'],['SQwpwvp6','332830680770854144_1','20-09-2026','26-09-2026','RTO','forward_RTO'],['aKgHMgsi','333180519544304448_1','25-09-2026','25-09-2026','RTO','forward_RTO'],['lFFbtqdE','331979860263470336_1','19-09-2026','25-09-2026','RTO','forward_RTO'],['fzU3N0ZM','331636067081291008_1','16-09-2026','24-09-2026','RTO','forward_RTO'],['fzU3N0ZM','331619222546711872_1','16-09-2026','24-09-2026','RTO','forward_RTO'],['SQwpwvp6','332884750811615808_1','20-09-2026','24-09-2026','RTO','forward_RTO'],['lFFbtqdE','331447824591258944_1','16-09-2026','24-09-2026','RTO','forward_RTO'],['lFFbtqdE','332167455704000128_1','19-09-2026','23-09-2026','RTO','forward_RTO'],['fzU3N0ZM','330646464337710592_1','15-09-2026','23-09-2026','RTO','forward_RTO'],['lFFbtqdE','330711435163633728_1','15-09-2026','23-09-2026','RTO','forward_RTO'],['lFFbtqdE','330931191930064192_1','15-09-2026','22-09-2026','RTO','forward_RTO'],['tvdky-v3nTGSD9r17h','331836795628455296_1','19-09-2026','23-09-2026','RTO','forward_RTO'],['fzU3N0ZM','331328531736972992_1','19-09-2026','22-09-2026','Customer Return','Quality issue'],['fzU3N0ZM','332397260013741696_1','19-09-2026','22-09-2026','RTO','forward_RTO'],['lFFbtqdE','329124727984915904_1','10-09-2026','22-09-2026','RTO','forward_RTO'],['fzU3N0ZM','330185874569857216_1','12-09-2026','22-09-2026','RTO','forward_RTO'],['fzU3N0ZM','330559153432332224_1','15-09-2026','22-09-2026','RTO','forward_RTO'],['fzU3N0ZM','333129886476253120_1','20-09-2026','21-09-2026','RTO','forward_RTO'],['fzU3N0ZM','325680408383577728_1','03-09-2026','19-09-2026','RTO','forward_RTO'],['SQwpwvp6','330899497244069376_1','15-09-2026','19-09-2026','RTO','forward_RTO'],['wgbFrzDz','328352934788190784_1','10-09-2026','18-09-2026','RTO','forward_RTO'],['fzU3N0ZM','329600074053885762_1','10-09-2026','18-09-2026','RTO','forward_RTO'],['9ybjpxYS','327688647665111680_1','08-09-2026','17-09-2026','RTO','forward_RTO'],['wgbFrzDz','329806793584052160_1','11-09-2026','17-09-2026','RTO','forward_RTO'],['gL3ECVOc','329618732629135488_1','11-09-2026','16-09-2026','RTO','forward_RTO'],['fzU3N0ZM','330804752606711488_1','15-09-2026','19-09-2026','RTO','forward_RTO'],['lFFbtqdE','330192763697399744_1','12-09-2026','17-09-2026','RTO','forward_RTO'],['lFFbtqdE','331700498817516928_1','16-09-2026','17-09-2026','RTO','forward_RTO'],['lFFbtqdE','322247684009657280_1','22-08-2026','14-09-2026','Customer Return','Defective'],['03OSmiMb','320876047120315722_1','22-08-2026','09-09-2026','Customer Return','Quality issue'],['tvdky-A83lWgN2P43p','325669318926172800_1','02-09-2026','08-09-2026','Customer Return','Size/fit issue'],['lFFbtqdE','323359686660664640_1','24-08-2026','07-09-2026','Customer Return','Did not like'],['C_pLE5W2','325497661406216832_1','31-08-2026','07-09-2026','Customer Return','Wrong size'],['fzU3N0ZM','324543771915465600_1','29-08-2026','05-09-2026','Customer Return','Did not like'],['SQwpwvp6','324461858528547648_1','27-08-2026','02-09-2026','RTO','forward_RTO'],['fzU3N0ZM','324077251817014336_1','27-08-2026','02-09-2026','RTO','forward_RTO'],['lFFbtqdE','324193508417357952_1','27-08-2026','02-09-2026','RTO','forward_RTO'],['lFFbtqdE','323377015863097280_1','24-08-2026','01-09-2026','Customer Return','Defective/stained'],['lFFbtqdE','324918130969272000_1','29-08-2026','01-09-2026','Customer Return','Quality issue'],['fzU3N0ZM','325157630563704320_1','29-08-2026','01-09-2026','Customer Return','Quality issue'],['fzU3N0ZM','323807177336685888_1','27-08-2026','01-09-2026','RTO','forward_RTO'],['fzU3N0ZM','323390663042696128_1','27-08-2026','01-09-2026','RTO','forward_RTO'],['lFFbtqdE','323379420613478464_1','24-08-2026','01-09-2026','RTO','forward_RTO'],['lFFbtqdE','323842884914644160_1','26-08-2026','31-08-2026','Customer Return','Quality issue'],['tvdky-jgDsPwLOI9oa','321581824425233536_2','20-08-2026','31-08-2026','Customer Return','Wrong product'],['tvdky-jgDsPwLOI9oa','321581824425233536_1','20-08-2026','31-08-2026','Customer Return','Wrong product'],['fzU3N0ZM','323016804162503616_1','24-08-2026','31-08-2026','RTO','forward_RTO'],['03OSmiMb','321127438908550976_1','20-08-2026','30-08-2026','Customer Return','Defective'],['fzU3N0ZM','323119262746426752_1','24-08-2026','30-08-2026','RTO','forward_RTO'],['lFFbtqdE','325497448209616768_1','31-08-2026','15-09-2026','RTO','forward_RTO'],['lFFbtqdE','326544406750697920_1','04-09-2026','12-09-2026','RTO','forward_RTO'],['lFFbtqdE','325972952019489856_1','04-09-2026','12-09-2026','RTO','forward_RTO'],['Gg-EtMCK','323996029463987264_1','31-08-2026','11-09-2026','RTO','forward_RTO'],['lFFbtqdE','324076208004390272_1','03-09-2026','11-09-2026','RTO','forward_RTO'],['fzU3N0ZM','323759404688082304_1','27-08-2026','19-09-2026','RTO','forward_RTO']].forEach(r=>add(r[1],r[2],r[0],0,r[4],'Returns File',{payDate:D(r[3]),reason:r[5]}));
+const ads=[['28-08-2026',25519583,0.24],['27-08-2026',25519583,96.97],['26-08-2026',25519583,199.42],['25-08-2026',25519583,133.0],['24-08-2026',25519583,0.5],['22-08-2026',25422244,0.11],['21-08-2026',25332378,0.46],['20-08-2026',25332378,0.54],['19-08-2026',25268662,0.51],['19-08-2026',25332378,0.48],['18-08-2026',25332378,0.58],['18-08-2026',25313268,36.86],['17-08-2026',25313268,10.08],['17-08-2026',25268662,391.21],['16-08-2026',25268662,11.33]];
+const expenses=ads.map(a=>({id:uid(),date:a[0],type:'Ads',desc:'Campaign '+a[1],amt:a[2]}));
+return{products,orders,expenses,gst:[{m:'Sep 2026',output:435.49,itc:145.0,paid:0,status:'Not filed'}]};
 }
-function listOwners(){ try{ return JSON.parse(localStorage.getItem(OWNERS_KEY) || "[]"); }catch(e){ return []; } }
-function saveOwners(list){ try{ localStorage.setItem(OWNERS_KEY, JSON.stringify(list)); }catch(e){} }
-function getCurrentOwner(){ try{ return localStorage.getItem(CURRENT_KEY) || ""; }catch(e){ return ""; } }
-function setCurrentOwner(name){ try{ localStorage.setItem(CURRENT_KEY, name); }catch(e){} }
-function loadOwnerData(owner){
-  try{
-    const raw = localStorage.getItem(dataKey(owner));
-    if(!raw) return emptyData();
-    const parsed = JSON.parse(raw);
-    const base = emptyData();
-    const merged = Object.assign(base, parsed);
-    merged.settings = Object.assign(base.settings, parsed.settings || {});
-    merged.subOwners = parsed.subOwners && parsed.subOwners.length===2 ? parsed.subOwners : base.subOwners;
-    merged.returnCosts = parsed.returnCosts || {};
-    merged.returnCostsAuto = parsed.returnCostsAuto || {};
-    merged.stock = parsed.stock || {};
-    merged.outstanding = parsed.outstanding || [];
-    merged.adsCostRows = parsed.adsCostRows || [];
-    merged.referralRows = parsed.referralRows || [];
-    merged.compensationRows = parsed.compensationRows || [];
-    merged.otherCosts = parsed.otherCosts || [];
-    return merged;
-  }catch(e){ return emptyData(); }
+function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.orders&&d.orders.length)return d;}catch(e){}return seed();}
+let DB=load();const save=()=>localStorage.setItem(KEY,JSON.stringify(DB));
+function toast(m,ok=true){const d=document.createElement('div');d.textContent=m;d.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:'+(ok?'#166534':'#991b1b')+';color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;z-index:99';document.body.appendChild(d);setTimeout(()=>d.remove(),2400);}
+const pname=id=>{const p=DB.products.find(p=>p.id===id);return p?p.name:'?';};
+function metrics(){let total=0,canc=0,ref=0,del=0,rto=0,ret=0;
+DB.orders.forEach(o=>{total+=o.sale;if(o.status==='Cancelled')canc+=o.sale;if(o.status==='Refund')ref+=o.sale;
+if(o.status==='Delivered')del++;if(o.status==='RTO')rto++;if(o.status==='Customer Return')ret++;});
+const netSale=total-canc-ref;let cost=0;
+DB.orders.forEach(o=>{if(o.status==='Delivered'){const p=DB.products.find(p=>p.id===o.prod);cost+=(p&&p.cost||0)*o.qty;}});
+const ads=DB.expenses.reduce((s,e)=>s+e.amt,0);return{total,canc,ref,netSale,cost,ads,np:netSale-cost-ads,margin:netSale>0?(netSale-cost-ads)/netSale*100:null,del,rto,ret};}
+const VIEWS=['Dashboard','Orders','RTO & Returns','Payments','Import Files','Inventory','Ads & Expenses','GST','Backup'];
+let cur='Dashboard';
+function nav(){const n=document.getElementById('nav');n.innerHTML='';VIEWS.forEach(v=>{const b=document.createElement('button');b.textContent=v;if(v===cur)b.className='on';b.onclick=()=>{cur=v;render();};n.appendChild(b);});}
+function render(){nav();const v=document.getElementById('view');const m=metrics();
+if(cur==='Dashboard'){v.innerHTML=`
+<div class="okmsg">✅ ${DB.orders.length} real orders · ${DB.products.length} products · ${DB.expenses.length} ad records</div>
+<div class="cards">
+<div class="card"><div class="l">Net Sales</div><div class="v">${fmt(m.netSale)}</div><div class="d">Sale − Cancelled − Refunds</div></div>
+<div class="card"><div class="l">− Cancelled</div><div class="v">${fmt(m.canc)}</div></div>
+<div class="card"><div class="l">Product Cost</div><div class="v">${fmt(m.cost)}</div><div class="d">Delivered only</div></div>
+<div class="card"><div class="l">Ads Spend</div><div class="v">${fmt(m.ads)}</div></div>
+<div class="card"><div class="l">Net Profit</div><div class="v ${m.np<0?'neg':'pos'}">${fmt(m.np)}</div><div class="d">Margin: ${m.margin==null?'n/a':m.margin.toFixed(1)+'%'}</div></div>
+<div class="card"><div class="l">Delivered / RTO / Returns</div><div class="v">${m.del} / ${m.rto} / ${m.ret}</div></div></div>
+<div class="grid2">
+<div class="panel"><div style="font-size:13px;margin-bottom:8px;font-weight:600">Order Status Mix</div><div class="chartwrap"><canvas id="c1"></canvas></div></div>
+<div class="panel"><div style="font-size:13px;margin-bottom:8px;font-weight:600">Sales Value by Product (₹)</div><div class="chartwrap"><canvas id="c2"></canvas></div></div></div>`;
+const st=STATUS.map(s=>DB.orders.filter(o=>o.status===s).length);
+new Chart(c1,{type:'doughnut',data:{labels:STATUS,datasets:[{data:st,backgroundColor:['#3b82f6','#f59e0b','#22c55e','#94a3b8','#ef4444','#ec4899','#64748b']}]},options:{plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}}}}});
+const byP={};DB.orders.forEach(o=>{if(o.sale)byP[o.prod]=(byP[o.prod]||0)+o.sale;});
+new Chart(c2,{type:'bar',data:{labels:Object.keys(byP).map(id=>pname(id).slice(0,22)),datasets:[{label:'Sale ₹',data:Object.values(byP),backgroundColor:'#7b2ff7',borderRadius:5}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true},x:{ticks:{font:{size:10}}}}}});}
+if(cur==='Orders'){v.innerHTML=`<div class="top"><h2>Orders (${DB.orders.length})</h2><button class="act" onclick="orderForm()">+ Add Order</button></div>
+<div class="panel"><div class="searchrow">
+<select id="fs" onchange="renderOrders()"><option value="">All Statuses</option>${STATUS.map(s=>`<option>${s}</option>`).join('')}</select>
+<select id="fp" onchange="renderOrders()"><option value="">All Products</option>${DB.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select>
+<input id="fq" placeholder="Search order ID..." oninput="renderOrders()"></div><div id="ot"></div></div>`;renderOrders();}
+if(cur==='RTO & Returns'){const c={};DB.orders.filter(o=>o.status==='Customer Return').forEach(o=>{const r=(o.reason||'Other');c[r]=(c[r]||0)+1;});
+v.innerHTML=`<div class="top"><h2>RTO & Customer Returns</h2></div>
+<div class="cards">
+<div class="card"><div class="l">RTO Count</div><div class="v">${m.rto}</div></div>
+<div class="card"><div class="l">Customer Returns</div><div class="v">${m.ret}</div></div>
+<div class="card"><div class="l">Return Rate</div><div class="v neg">${DB.orders.length?Math.round((m.rto+m.ret)/DB.orders.length*100)+'%':'—'}</div></div></div>
+<div class="panel"><b style="font-size:13px">Top Return Reasons</b><div style="margin-top:8px">${Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([r,n])=>`<span class="pill" style="background:#fce7f3;color:#9d174d">${r}: ${n}</span>`).join(' ')}</div></div>
+<div class="panel"><table><tr><th>Order ID</th><th>Dispatch</th><th>Product</th><th>Type</th><th>Return Date</th><th>Reason</th><th></th></tr>
+${DB.orders.filter(o=>['RTO','Customer Return'].includes(o.status)).map(o=>`<tr><td>${o.id}</td><td>${o.date}</td><td>${pname(o.prod)}</td><td><span class="badge ${BC[o.status]}">${o.status}</span></td><td>${o.payDate}</td><td style="white-space:normal">${o.reason}</td><td><button class="sm" onclick="markRestocked('${o.id}')">Restocked ✔</button></td></tr>`).join('')}</table></div>`;}
+if(cur==='Payments'){v.innerHTML=`<div class="top"><h2>Payment Details</h2></div>
+<div class="warn">Sep 2026 · Txn <b>AXISCN1453327166</b> · Paid 01-09-2026 · All 5 settled orders RTO → net bank credit <b>₹0.00</b></div>
+<div class="panel"><table><tr><th>Order ID</th><th>Sale ₹</th><th>Sale Return ₹</th><th>Final Settlement ₹</th><th>TCS</th><th>TDS</th><th>Comp/Claims/Rec.</th><th>Pay Date</th><th>Txn</th></tr>
+<tr><td>324435580178461440_1</td><td>548.00</td><td>−548.00</td><td>0.00</td><td>0</td><td>0</td><td>0</td><td>01-09-2026</td><td>AXISCN1453327166</td></tr>
+<tr><td>324043536414662528_1</td><td>569.00</td><td>−569.00</td><td>0.00</td><td>0</td><td>0</td><td>0</td><td>01-09-2026</td><td>AXISCN1453327166</td></tr>
+<tr><td>323119262746426752_1</td><td>475.00</td><td>−475.00</td><td>0.00</td><td>0</td><td>0</td><td>0</td><td>01-09-2026</td><td>AXISCN1453327166</td></tr>
+<tr><td>323016804162503616_1</td><td>488.00</td><td>−488.00</td><td>0.00</td><td>0</td><td>0</td><td>0</td><td>01-09-2026</td><td>AXISCN1453327166</td></tr>
+<tr><td>322387665185353024_1</td><td>290.47</td><td>−290.47</td><td>0.00</td><td>0</td><td>0</td><td>0</td><td>01-09-2026</td><td>AXISCN1453327166</td></tr></table></div>`;}
+if(cur==='Import Files'){v.innerHTML=`<div class="top"><h2>Daily Import</h2></div>
+<div class="okmsg">📥 Select (or drag & drop) today's 4 Meesho files — any order. The app auto-detects each file type, parses XLSX/CSV, skips duplicate Order IDs, and updates everything.</div>
+<div class="panel">
+<div class="slot"><h4>1️⃣ Orders file</h4><div class="hint">e.g. Orders_2026-10-01_2026-10-03….xlsx/csv — new orders & status changes</div><input type="file" id="fOrders" accept=".xlsx,.xls,.csv" onchange="handleFiles(this.files,'orders')" style="margin-top:8px"></div>
+<div class="slot"><h4>2️⃣ In-Transit Returns file</h4><div class="hint">RTO + Customer Returns currently in transit</div><input type="file" id="fReturns" accept=".xlsx,.xls,.csv" onchange="handleFiles(this.files,'returns')" style="margin-top:8px"></div>
+<div class="slot"><h4>3️⃣ Completed / Delivered file</h4><div class="hint">Delivered orders + their returns/RTO</div><input type="file" id="fDelivered" accept=".xlsx,.xls,.csv" onchange="handleFiles(this.files,'delivered')" style="margin-top:8px"></div>
+<div class="slot"><h4>4️⃣ Payment / Settlement file</h4><div class="hint">SP_ORDER_ADS_REFERRAL_PAYMENT_FILE — payments, TCS, TDS, ads cost</div><input type="file" id="fPayments" accept=".xlsx,.xls,.csv" onchange="handleFiles(this.files,'payments')" style="margin-top:8px"></div>
+<button class="act" onclick="document.getElementById('multiPick').click()">📤 Select all 4 files at once</button>
+<input type="file" id="multiPick" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="handleAll(this.files)">
+<div id="importResult"></div></div>`;
+setupDragDrop();}
+if(cur==='Inventory'){v.innerHTML=`<div class="top"><h2>Inventory</h2><button class="act" onclick="prodForm()">+ Add Product</button></div>
+<div class="panel"><table><tr><th>Product</th><th>SKU</th><th>GST%</th><th>Price ₹</th><th>Cost ₹</th><th>Stock</th><th></th></tr>
+${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.sku}</td><td>${p.gst}%</td><td>${fmt(p.price)}</td><td>${p.cost?fmt(p.cost):'<span style="color:var(--r)">⚠ add cost</span>'}</td><td><input value="${p.stock}" onchange="setStock('${p.id}',this.value)" style="width:70px;text-align:center"></td><td><button class="sm" onclick="prodEdit('${p.id}')">Edit cost</button></td></tr>`).join('')}</table></div>`;}
+if(cur==='Ads & Expenses'){const t=DB.expenses.reduce((s,e)=>s+e.amt,0);
+v.innerHTML=`<div class="top"><h2>Ads & Expenses</h2><button class="act" onclick="expForm()">+ Add Expense</button></div>
+<div class="cards"><div class="card"><div class="l">Total Ads Spend</div><div class="v">${fmt(t)}</div></div><div class="card"><div class="l">Records</div><div class="v">${DB.expenses.length}</div></div></div>
+<div class="panel"><table><tr><th>Date</th><th>Type</th><th>Description</th><th>Amount ₹</th><th></th></tr>
+${DB.expenses.map(e=>`<tr><td>${e.date}</td><td>${e.type}</td><td>${e.desc}</td><td>${fmt(e.amt)}</td><td><button class="sm" onclick="delRec('expenses','${e.id}')">✕</button></td></tr>`).join('')}</table></div>`;}
+if(cur==='GST'){v.innerHTML=`<div class="top"><h2>GST Summary</h2><button class="act" onclick="gstForm()">+ Add Month</button></div>
+<div class="warn">📋 Record-keeping only — verify filing with your CA or tax professional.</div>
+<div class="panel"><table><tr><th>Month</th><th>Output GST ₹</th><th>Eligible ITC ₹</th><th>Payable ₹</th><th>Paid ₹</th><th>Status</th></tr>
+${DB.gst.map(g=>`<tr><td>${g.m}</td><td>${fmt(g.output)}</td><td>${fmt(g.itc)}</td><td>${fmt(Math.max(0,g.output-g.itc-g.paid))}</td><td>${fmt(g.paid)}</td><td>${g.status}</td></tr>`).join('')}</table></div>`;}
+if(cur==='Backup'){v.innerHTML=`<div class="top"><h2>Backup & Restore</h2></div>
+<div class="panel">All data auto-saves in this browser. Download a JSON backup regularly.<br><br>
+<button class="act" onclick="backup()">⬇ Download Backup (JSON)</button> <button class="act" style="background:var(--r)" onclick="restore()">⬆ Restore Backup</button> <button class="act" style="background:var(--r)" onclick="if(confirm('Reset to seeded data?')){DB=seed();save();render();}">↺ Reset to Seed</button></div>`;}
 }
-function saveOwnerData(owner, data){ try{ localStorage.setItem(dataKey(owner), JSON.stringify(data)); }catch(e){} }
-
-// ---------- cloud sync (Supabase) ----------
-const SB_URL_KEY = "mpp_supabase_url";
-const SB_KEY_KEY = "mpp_supabase_key";
-const SB_DISABLED_KEY = "mpp_supabase_disabled";
-const DEFAULT_SUPABASE_URL = "https://nvkwipdfurzhcqpginfy.supabase.co";
-const DEFAULT_SUPABASE_KEY = "sb_publishable_Rg4K-nXqHvteC_y1X2FBEQ_KSsUndo-";
-let sbClient = null;
-
-function initSupabase(){
-  if(localStorage.getItem(SB_DISABLED_KEY) === "1"){ sbClient = null; return; }
-  const url = localStorage.getItem(SB_URL_KEY) || DEFAULT_SUPABASE_URL;
-  const key = localStorage.getItem(SB_KEY_KEY) || DEFAULT_SUPABASE_KEY;
-  if(url && key && window.supabase && window.supabase.createClient){
-    try{ sbClient = window.supabase.createClient(url, key); }
-    catch(e){ sbClient = null; }
-  } else {
-    sbClient = null;
-  }
-}
-
-function setSyncStatus(text, isError){
-  const el = document.getElementById("syncStatus");
-  if(!el) return;
-  el.textContent = text;
-  el.style.color = isError ? "var(--alert)" : (sbClient ? "var(--teal)" : "var(--muted)");
-}
-
-async function pushToCloud(owner, payload){
-  if(!sbClient) return;
-  setSyncStatus("Syncing...");
-  try{
-    const { error } = await sbClient.from("business_data").upsert({
-      business: owner, data: payload, updated_at: new Date().toISOString(),
-    });
-    if(error) throw error;
-    setSyncStatus("Synced " + new Date().toLocaleTimeString());
-  }catch(e){
-    console.error("Cloud sync failed:", e);
-    setSyncStatus("Cloud sync failed (saved locally)", true);
-  }
-}
-
-async function refreshFromCloud(owner){
-  if(!sbClient) return;
-  try{
-    const { data: row, error } = await sbClient
-      .from("business_data").select("data").eq("business", owner).maybeSingle();
-    if(error) throw error;
-    if(row && row.data && owner === currentOwner){
-      const base = emptyData();
-      const merged = Object.assign(base, row.data);
-      merged.settings = Object.assign(base.settings, row.data.settings || {});
-      merged.subOwners = row.data.subOwners && row.data.subOwners.length===2 ? row.data.subOwners : base.subOwners;
-      merged.returnCosts = row.data.returnCosts || {};
-      merged.returnCostsAuto = row.data.returnCostsAuto || {};
-      merged.stock = row.data.stock || {};
-      merged.outstanding = row.data.outstanding || [];
-      merged.adsCostRows = row.data.adsCostRows || [];
-      merged.referralRows = row.data.referralRows || [];
-      merged.compensationRows = row.data.compensationRows || [];
-      merged.otherCosts = row.data.otherCosts || [];
-      data = merged;
-      saveOwnerData(owner, data);
-      render();
-      setSyncStatus("Synced " + new Date().toLocaleTimeString());
-    } else {
-      setSyncStatus(sbClient ? "Connected — no cloud data yet for this business" : "Local only");
-    }
-  }catch(e){
-    console.error("Cloud refresh failed:", e);
-    setSyncStatus("Cloud sync failed (using local copy)", true);
-  }
-}
-
-async function fetchOwnersFromCloud(){
-  if(!sbClient) return;
-  try{
-    const { data: rows, error } = await sbClient.from("business_data").select("business");
-    if(error) throw error;
-    if(!rows || !rows.length){
-      pushToCloud(currentOwner, data);
-      return;
-    }
-    const cloudOwners = Array.from(new Set(rows.map(r => r.business).filter(Boolean)));
-    if(!cloudOwners.length) return;
-    owners = cloudOwners;
-    saveOwners(owners);
-    if(!owners.includes(currentOwner)) currentOwner = owners[0];
-    setCurrentOwner(currentOwner);
-    data = loadOwnerData(currentOwner);
-    render();
-    refreshFromCloud(currentOwner);
-  }catch(e){
-    console.error("Could not fetch business list from cloud:", e);
-  }
-}
-
-let owners = listOwners();
-let currentOwner = getCurrentOwner();
-if(!currentOwner || !owners.includes(currentOwner)){
-  if(owners.length){ currentOwner = owners[0]; }
-  else { owners = ["My Store"]; saveOwners(owners); currentOwner = "My Store"; }
-  setCurrentOwner(currentOwner);
-}
-let data = loadOwnerData(currentOwner);
-let financeChartInstance = null, outcomeChartInstance = null, trendChartInstance = null;
-let costFilter = "", returnsFilter = "", receivedFilter = "", pendingFilter = "", stockFilter = "", ordersFilter = "", ordersStatusFilter = "";
-let dateFrom = "", dateTo = "";
-
-function persist(){ saveOwnerData(currentOwner, data); render(); pushToCloud(currentOwner, data); }
-
-// ---------- helpers ----------
-function stripBom(text){ return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text; }
-function cleanKey(v){ return String(v||"").replace(/[\u200B-\u200D\uFEFF]/g,"").trim(); }
-function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-
-// ---------- parsers ----------
-async function parseOrdersCsv(file){
-  const text = stripBom(await file.text());
-  const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
-  const out = [];
-  for(const row of parsed.data){
-    const status = cleanKey(row["Reason for Credit Entry"]).toUpperCase();
-    if(!status) continue;
-    const subOrderNo = cleanKey(row["Sub Order No"]);
-    if(!subOrderNo) continue;
-    const qty = parseFloat(row["Quantity"]||"1") || 1;
-    const saleAmount = parseFloat(row["Supplier Discounted Price (Incl GST and Commision)"]||"0") || 0;
-    out.push({ subOrderNo, sku:cleanKey(row["SKU"]), productName:cleanKey(row["Product Name"]), qty, saleAmount, status, orderDate:cleanKey(row["Order Date"]) });
-  }
-  return out;
-}
-async function parseReturnsCsv(file){
-  const text = stripBom(await file.text());
-  const lines = text.split(/\r?\n/);
-  const headerIdx = lines.findIndex(l => l.replace(/"/g,"").trim().startsWith("S No,"));
-  if(headerIdx === -1) throw new Error('Could not find header row (expected "S No") — wrong file?');
-  const body = lines.slice(headerIdx).join("\n");
-  const parsed = Papa.parse(body, { header:true, skipEmptyLines:true });
-  const out = [];
-  for(const row of parsed.data){
-    const suborderNo = cleanKey(row["Suborder Number"]);
-    if(!suborderNo) continue;
-    const typeRaw = cleanKey(row["Type of Return"]);
-    let type = null;
-    if(typeRaw === "Courier Return (RTO)") type = "RTO";
-    else if(typeRaw === "Customer Return") type = "CUSTOMER_RETURN";
-    if(!type) continue;
-    const qty = parseFloat(row["Qty"]||"1") || 1;
-    out.push({ suborderNo, sku:cleanKey(row["SKU"]), productName:cleanKey(row["Product Name"]), qty, type });
-  }
-  return out;
-}
-// ---------- bulk cost sheet (download / upload) ----------
-async function readRowsAny(file){
-  const isCsv = file.name.toLowerCase().endsWith(".csv");
-  if(isCsv){
-    const text = stripBom(await file.text());
-    return Papa.parse(text, { header:true, skipEmptyLines:true }).data;
-  }
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type:"array" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(sheet, { defval:"" });
-}
-function findCol(row, aliases){
-  const keys = Object.keys(row);
-  for(const alias of aliases){
-    const match = keys.find(k => cleanKey(k).toLowerCase() === alias);
-    if(match !== undefined && row[match] !== "") return row[match];
-  }
-  for(const alias of aliases){
-    const match = keys.find(k => cleanKey(k).toLowerCase().includes(alias));
-    if(match !== undefined && row[match] !== "") return row[match];
-  }
-  return "";
-}
-function downloadCostSheet(rows){
-  const header = ["SKU","Product","Cost Price","Other Cost","Owner"];
-  const lines = [header];
-  rows.forEach(([sku, name]) => {
-    const c = data.costs[sku] || {};
-    lines.push([sku, name, c.cost ?? "", c.otherCost ?? "", c.ownerTag || data.subOwners[0]]);
-  });
-  const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type:"text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = currentOwner.replace(/\s+/g,"_") + "_cost_sheet.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-async function applyCostSheet(file){
-  const rows = await readRowsAny(file);
-  let updated = 0, skipped = 0;
-  for(const row of rows){
-    const sku = cleanKey(findCol(row, ["sku", "sku id", "sku code"]));
-    if(!sku){ skipped++; continue; }
-    const productName = cleanKey(findCol(row, ["product", "product name", "item name"]));
-    const costRaw = findCol(row, ["cost price", "cost"]);
-    const otherRaw = findCol(row, ["other cost", "additional cost", "ads cost"]);
-    const ownerRaw = cleanKey(findCol(row, ["owner"]));
-
-    const existing = data.costs[sku] || { sku, productName:"", cost:0, otherCost:0, ownerTag:data.subOwners[0] };
-    if(productName) existing.productName = productName;
-    if(costRaw !== "") existing.cost = parseFloat(costRaw) || 0;
-    if(otherRaw !== "") existing.otherCost = parseFloat(otherRaw) || 0;
-    if(ownerRaw){
-      const matchedOwner = data.subOwners.find(o => o.toLowerCase() === ownerRaw.toLowerCase());
-      if(matchedOwner) existing.ownerTag = matchedOwner;
-    }
-    existing.sku = sku;
-    data.costs[sku] = existing;
-    updated++;
-  }
-  return { updated, skipped };
-}
-
-// ---------- stock (all-time sold, independent of the dashboard date filter) ----------
-function computeSoldBySku(d){
-  const crSuborderSet = new Set(d.returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
-  const rtoSuborderSet = new Set(d.returns.filter(r=>r.type==="RTO").map(r=>r.suborderNo));
-  const sold = {};
-  d.orders.forEach(o => {
-    if(o.status !== "DELIVERED" || crSuborderSet.has(o.subOrderNo) || rtoSuborderSet.has(o.subOrderNo)) return;
-    sold[o.sku] = (sold[o.sku] || 0) + o.qty;
-  });
-  return sold;
-}
-function downloadStockSheet(rows){
-  const header = ["SKU","Product","Current Stock"];
-  const lines = [header];
-  rows.forEach(([sku, name]) => {
-    const s = data.stock[sku];
-    lines.push([sku, name, s ? (s.qty ?? "") : ""]);
-  });
-  const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type:"text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = currentOwner.replace(/\s+/g,"_") + "_stock_sheet.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-async function applyStockSheet(file){
-  const rows = await readRowsAny(file);
-  let updated = 0, skipped = 0;
-  for(const row of rows){
-    const sku = cleanKey(findCol(row, ["sku", "sku id", "sku code"]));
-    if(!sku){ skipped++; continue; }
-    const qtyRaw = findCol(row, ["current stock", "stock", "quantity", "qty"]);
-    if(qtyRaw === ""){ skipped++; continue; }
-    data.stock[sku] = { qty: parseFloat(qtyRaw) || 0 };
-    updated++;
-  }
-  return { updated, skipped };
-}
-
-async function parsePaymentsXlsx(file){
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type:"array" });
-  const received = [];
-  const outstanding = [];
-  const returnLossRows = [];
-  const paymentReturns = [];
-  const sheet = wb.Sheets["Order Payments"];
-  if(sheet){
-    const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
-    const headerIdx = rows.findIndex(r => cleanKey(r[0]) === "Sub Order No");
-    if(headerIdx !== -1){
-      const headers = rows[headerIdx].map(h => cleanKey(h));
-      const subOrderIdx = headers.indexOf("Sub Order No");
-      const settlementIdx = headers.indexOf("Final Settlement Amount");
-      const statusIdx = headers.indexOf("Live Order Status");
-      const payDateIdx = headers.indexOf("Payment Date");
-      const productNameIdx = headers.indexOf("Product Name");
-      const skuIdx = headers.indexOf("Supplier SKU");
-      const qtyIdx = headers.indexOf("Quantity");
-      for(let i = headerIdx+2; i < rows.length; i++){
-        const row = rows[i];
-        const subOrderNo = cleanKey(row[subOrderIdx]);
-        if(!subOrderNo || !/^\d+_\d+$/.test(subOrderNo)) continue;
-        const finalSettlement = parseFloat(String(row[settlementIdx] ?? "0"))||0;
-        const liveStatus = cleanKey(row[statusIdx]);
-        const payDateRaw = cleanKey(row[payDateIdx]).toLowerCase();
-        const rec = { subOrderNo, finalSettlement, liveStatus, payDate: cleanKey(row[payDateIdx]) };
-        if(!payDateRaw || payDateRaw === "unscheduled"){
-          outstanding.push(rec);
-        } else {
-          received.push(rec);
-        }
-        if(liveStatus.toLowerCase() === "return"){
-          if(finalSettlement < 0) returnLossRows.push({ subOrderNo, amount: Math.abs(finalSettlement) });
-          paymentReturns.push({
-            suborderNo: subOrderNo,
-            sku: cleanKey(row[skuIdx]),
-            productName: cleanKey(row[productNameIdx]),
-            qty: parseFloat(row[qtyIdx] || "1") || 1,
-            type: "CUSTOMER_RETURN",
-          });
-        }
-      }
-    }
-  }
-  return {
-    received, outstanding, returnLossRows, paymentReturns,
-    adsCostRows: parseAdsCostSheet(wb),
-    referralRows: parseReferralSheet(wb),
-    compensationRows: parseCompensationSheet(wb),
-  };
-}
-
-function readSectionRows(wb, sheetName, headerFirstCell){
-  const sheet = wb.Sheets[sheetName];
-  if(!sheet) return { headers: [], rows: [] };
-  const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
-  const headerIdx = rows.findIndex(r => cleanKey(r[0]) === headerFirstCell);
-  if(headerIdx === -1) return { headers: [], rows: [] };
-  const headers = rows[headerIdx].map(h => cleanKey(h));
-  const out = [];
-  for(let i = headerIdx+2; i < rows.length; i++){
-    const row = rows[i];
-    const firstCell = cleanKey(row[0]);
-    if(!firstCell || firstCell.toLowerCase().startsWith("no data is available")) continue;
-    out.push(row);
-  }
-  return { headers, rows: out };
-}
-function parseAdsCostSheet(wb){
-  const { headers, rows } = readSectionRows(wb, "Ads Cost", "Deduction Duration");
-  if(!rows.length) return [];
-  const dateIdx = headers.indexOf("Deduction Date");
-  const campaignIdx = headers.indexOf("Campaign ID");
-  const totalIdx = headers.indexOf("Total Ads Cost");
-  return rows.map(row => ({
-    deductionDate: cleanKey(row[dateIdx]),
-    campaignId: cleanKey(row[campaignIdx]),
-    totalAdsCost: parseFloat(String(row[totalIdx] ?? "0")) || 0,
-  }));
-}
-function parseReferralSheet(wb){
-  const { headers, rows } = readSectionRows(wb, "Referral Payments", "Reward Id");
-  if(!rows.length) return [];
-  const idIdx = headers.indexOf("Reward Id");
-  const dateIdx = headers.indexOf("Payment Date");
-  const reasonIdx = headers.indexOf("Reason");
-  const amtIdx = headers.indexOf("Net Referral Amount");
-  return rows.map(row => ({
-    rewardId: cleanKey(row[idIdx]),
-    paymentDate: cleanKey(row[dateIdx]),
-    reason: cleanKey(row[reasonIdx]),
-    netAmount: parseFloat(String(row[amtIdx] ?? "0")) || 0,
-  }));
-}
-function parseCompensationSheet(wb){
-  const { headers, rows } = readSectionRows(wb, "Compensation and Recovery", "Date");
-  if(!rows.length) return [];
-  const dateIdx = headers.indexOf("Date");
-  const programIdx = headers.indexOf("Program Name");
-  const reasonIdx = headers.indexOf("Reason");
-  const amtIdx = headers.indexOf("Amount (inc GST) INR");
-  return rows.map(row => ({
-    date: cleanKey(row[dateIdx]),
-    program: cleanKey(row[programIdx]),
-    reason: cleanKey(row[reasonIdx]),
-    amount: parseFloat(String(row[amtIdx] ?? "0")) || 0,
-  }));
-}
-
-// ---------- merge (dedupe) ----------
-function mergeBy(existing, incoming, keyFn){
-  const seen = new Set(existing.map(keyFn));
-  const merged = existing.slice();
-  let added = 0;
-  for(const rec of incoming){
-    const k = keyFn(rec);
-    if(!k || seen.has(k)) continue;
-    seen.add(k); merged.push(rec); added++;
-  }
-  return { merged, added };
-}
-
-// ---------- stats ----------
-function ownerOf(sku){
-  const c = data.costs[sku];
-  return (c && c.ownerTag) || data.subOwners[0];
-}
-function costOf(sku){ const c = data.costs[sku]; return c ? (Number(c.cost)||0) + (Number(c.otherCost)||0) : 0; }
-function crLossFor(rec){
-  const override = data.returnCosts[rec.suborderNo];
-  return override !== undefined ? Number(override) || 0 : (Number(data.settings.customerReturnFlatLoss) || 0);
-}
-
-function computeStats(d, dateFrom, dateTo){
-  let orders = d.orders;
-  if(dateFrom || dateTo){
-    orders = orders.filter(o => {
-      if(!o.orderDate) return false;
-      if(dateFrom && o.orderDate < dateFrom) return false;
-      if(dateTo && o.orderDate > dateTo) return false;
-      return true;
-    });
-  }
-  const orderSuborderSet = new Set(orders.map(o=>o.subOrderNo));
-  let returns = d.returns;
-  if(dateFrom || dateTo){
-    returns = returns.filter(r => orderSuborderSet.has(r.suborderNo));
-  }
-  let payments = d.payments;
-  if(dateFrom || dateTo){
-    payments = payments.filter(p => orderSuborderSet.has(p.subOrderNo));
-  }
-  let outstandingRows = d.outstanding;
-  if(dateFrom || dateTo){
-    outstandingRows = outstandingRows.filter(o => orderSuborderSet.has(o.subOrderNo));
-  }
-
-  const crSuborderSet = new Set(returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
-  const rtoSuborderSetForSale = new Set(returns.filter(r=>r.type==="RTO").map(r=>r.suborderNo));
-  // An RTO'd order never actually reached the customer, so it must never count
-  // as a completed sale — even if Meesho's Orders export happens to still
-  // show "DELIVERED" for that line. If you re-dispatch the item, Meesho gives
-  // the re-dispatch its own, separate Sub Order No, so it will still be
-  // counted once on its own — this exclusion only removes the original
-  // failed attempt, it never touches the re-dispatch's numbers.
-  const saleOrders = orders.filter(o => o.status === "DELIVERED" && !crSuborderSet.has(o.subOrderNo) && !rtoSuborderSetForSale.has(o.subOrderNo));
-
-  const totalSale = saleOrders.reduce((s,o)=>s+o.saleAmount,0);
-  const productCost = saleOrders.reduce((s,o)=>s+o.qty*costOf(o.sku),0);
-  const adsCost = Number(d.settings.adsCost) || 0;
-  const globalOtherCost = Number(d.settings.otherCost) || 0;
-  const itemizedOtherCost = (d.otherCosts||[]).reduce((s,r)=>s+(Number(r.amount)||0),0);
-  const totalCost = productCost + adsCost + globalOtherCost + itemizedOtherCost;
-  const profit = totalSale - totalCost;
-  const gstPct = d.settings.gstPercent;
-  const gst = totalSale * (gstPct/(100+gstPct));
-  const rtoRecs = returns.filter(r=>r.type==="RTO");
-  const rtoCount = rtoRecs.length;
-  const rtoLoss = 0;
-  const crRecs = returns.filter(r=>r.type==="CUSTOMER_RETURN");
-  const crCount = crRecs.length;
-  const crLoss = crRecs.reduce((s,r)=>s+crLossFor(r),0);
-  const crAutoCount = crRecs.filter(r => d.returnCostsAuto && d.returnCostsAuto[r.suborderNo]).length;
-  const crDefaultCount = crCount - crAutoCount;
-  const netProfit = profit - gst - rtoLoss - crLoss;
-  const settlement = payments.reduce((s,p)=>s+p.finalSettlement,0);
-  const allSkuRows = orders.concat(returns);
-  const missing = Array.from(new Set(allSkuRows.filter(r=>!(r.sku in d.costs) || (Number(d.costs[r.sku].cost)||0)===0).map(r=>r.sku).filter(Boolean)));
-
-  const paymentSuborderSet = new Set(payments.map(p=>p.subOrderNo));
-  const outstandingMap = {};
-  outstandingRows.forEach(o => { outstandingMap[o.subOrderNo] = o.finalSettlement; });
-  const pendingOrders = saleOrders.filter(o => !paymentSuborderSet.has(o.subOrderNo)).map(o => {
-    const meeshoAmount = outstandingMap[o.subOrderNo];
-    return Object.assign({}, o, {
-      expectedAmount: meeshoAmount !== undefined ? meeshoAmount : o.saleAmount,
-      isEstimate: meeshoAmount === undefined,
-    });
-  });
-  const pendingAmount = pendingOrders.reduce((s,o)=>s+o.expectedAmount,0);
-
-  const adsCostFromFile = d.adsCostRows.reduce((s,r)=>s+r.totalAdsCost,0);
-  const referralTotal = d.referralRows.reduce((s,r)=>s+r.netAmount,0);
-  const compensationTotal = d.compensationRows.reduce((s,r)=>s+r.amount,0);
-  const outstandingTotal = outstandingRows.reduce((s,o)=>s+o.finalSettlement,0);
-  const expectedBankTotal = settlement + referralTotal + compensationTotal - adsCostFromFile;
-
-  const bySubOwner = {};
-  d.subOwners.forEach(o => bySubOwner[o] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 });
-  saleOrders.forEach(o => {
-    const owner = ownerOf(o.sku);
-    if(!bySubOwner[owner]) bySubOwner[owner] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 };
-    bySubOwner[owner].sale += o.saleAmount;
-    bySubOwner[owner].cost += o.qty*costOf(o.sku);
-    bySubOwner[owner].orders += 1;
-    if(paymentSuborderSet.has(o.subOrderNo)) bySubOwner[owner].received += o.saleAmount;
-    else bySubOwner[owner].pending += o.saleAmount;
-  });
-  crRecs.forEach(r => {
-    const owner = ownerOf(r.sku);
-    if(!bySubOwner[owner]) bySubOwner[owner] = { sale:0, cost:0, crLoss:0, orders:0, received:0, pending:0, returns:0 };
-    bySubOwner[owner].crLoss += crLossFor(r);
-    bySubOwner[owner].returns += 1;
-  });
-  Object.keys(bySubOwner).forEach(o => {
-    const s = bySubOwner[o];
-    s.gst = s.sale * (gstPct/(100+gstPct));
-    s.profit = s.sale - s.cost;
-    s.netProfit = s.profit - s.gst - s.crLoss;
-  });
-
-  const cancelledCount = orders.filter(o => o.status === "CANCELLED").length;
-  const nonCancelled = orders.filter(o => o.status !== "CANCELLED");
-  const shippedCount = orders.filter(o => o.status === "SHIPPED").length;
-  const readyCount = orders.filter(o => o.status === "READY_TO_SHIP").length;
-  const deliveredAllCount = orders.filter(o => o.status === "DELIVERED").length;
-  const inProgressCount = shippedCount + readyCount;
-  const totalOrdersAll = orders.length;
-  const nonCancelledCount = nonCancelled.length || 1;
-  const deliveryRate = (deliveredAllCount / nonCancelledCount) * 100;
-  const rtoRate = (rtoCount / nonCancelledCount) * 100;
-  const returnRate = (crCount / nonCancelledCount) * 100;
-
-  const dates = d.orders.map(o=>o.orderDate).filter(Boolean).sort();
-  const dateRange = dates.length ? { from: dates[0], to: dates[dates.length-1] } : null;
-
-  const byMonth = {};
-  saleOrders.forEach(o => {
-    if(!o.orderDate) return;
-    const month = o.orderDate.slice(0,7);
-    if(!byMonth[month]) byMonth[month] = { sales:0, orders:0 };
-    byMonth[month].sales += o.saleAmount;
-    byMonth[month].orders += 1;
-  });
-  const trendMonths = Object.keys(byMonth).sort().slice(-6);
-  const trend = trendMonths.map(m => ({ month:m, sales:byMonth[m].sales, orders:byMonth[m].orders }));
-
-  return {
-    totalSale, totalCost, productCost, adsCost, globalOtherCost, itemizedOtherCost, profit, gst, rtoCount, rtoLoss, crRecs, crCount, crLoss, crAutoCount, crDefaultCount,
-    netProfit, settlement, orderCount:saleOrders.length, totalOrders:totalOrdersAll, missing, bySubOwner,
-    deliveredCount: deliveredAllCount, inProgressCount, dateRange, saleOrders, pendingOrders, pendingAmount,
-    cancelledCount, shippedCount, deliveryRate, rtoRate, returnRate, trend,
-    adsCostFromFile, referralTotal, compensationTotal, outstandingTotal, expectedBankTotal
-  };
-}
-
-function fmt(n){ return "₹" + Math.round(n).toLocaleString("en-IN"); }
-
-// ---------- tabs ----------
-document.getElementById("tabbar").addEventListener("click", (e) => {
-  const btn = e.target.closest(".tabbtn");
-  if(!btn) return;
-  document.querySelectorAll(".tabbtn").forEach(b=>b.classList.remove("active"));
-  document.querySelectorAll(".tabpanel").forEach(p=>p.classList.remove("active"));
-  btn.classList.add("active");
-  document.getElementById("panel-"+btn.dataset.tab).classList.add("active");
-});
-
-// ---------- rendering ----------
-function renderOwnerBar(){
-  const el = document.getElementById("ownerBar");
-  el.innerHTML = "";
-  owners.forEach(o => {
-    const b = document.createElement("button");
-    b.className = "btn-owner" + (o===currentOwner ? " active" : "");
-    b.textContent = o;
-    b.onclick = () => { currentOwner = o; setCurrentOwner(o); data = loadOwnerData(o); render(); refreshFromCloud(o); };
-    el.appendChild(b);
-  });
-  const addBtn = document.createElement("button");
-  addBtn.className = "btn-owner";
-  addBtn.style.borderStyle = "dashed";
-  addBtn.textContent = "+ Add business";
-  addBtn.onclick = () => {
-    const name = prompt("Business / seller account name:");
-    if(name && name.trim()){
-      const n = name.trim();
-      if(!owners.includes(n)){ owners.push(n); saveOwners(owners); }
-      currentOwner = n; setCurrentOwner(n); data = loadOwnerData(n); render(); refreshFromCloud(n);
-    }
-  };
-  el.appendChild(addBtn);
-}
-
-const SLOTS = [
-  { key:"orders", label:"Orders export", hint:"Orders_<dates>.csv" },
-  { key:"completed", label:"Completed / Delivered", hint:"completed_delivered...csv" },
-  { key:"intransit", label:"Intransit (RTO)", hint:"intransit...csv" },
-  { key:"payments", label:"Payment file", hint:"...PAYMENT_FILE... / ...ADS_REFERRAL...xlsx" },
-];
-
-function renderUploadGrid(){
-  const el = document.getElementById("uploadGrid");
-  el.innerHTML = "";
-  SLOTS.forEach(slot => {
-    const wrap = document.createElement("div");
-    const btn = document.createElement("button");
-    btn.className = "upload-slot";
-    btn.innerHTML = `<svg class="icon" style="width:20px;height:20px;color:var(--muted);"><use href="#ic-upload"/></svg><span style="font-size:12.5px;text-align:center;">${slot.label}</span><span class="muted" style="font-size:10px;text-align:center;">${slot.hint}</span>`;
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = slot.key === "payments" ? ".xlsx" : ".csv";
-    input.style.display = "none";
-    const msg = document.createElement("div");
-    msg.style.fontSize = "11px";
-    msg.style.marginTop = "5px";
-    btn.onclick = () => input.click();
-    input.onchange = async () => {
-      const file = input.files[0];
-      input.value = "";
-      if(!file) return;
-      msg.className = "muted";
-      msg.textContent = "Reading...";
-      try{
-        let added = 0, total = 0;
-        if(slot.key === "orders"){
-          const recs = await parseOrdersCsv(file);
-          const r = mergeBy(data.orders, recs, x=>x.subOrderNo);
-          data.orders = r.merged; added = r.added; total = recs.length;
-          msg.className = "teal";
-          msg.textContent = added + " new rows added" + ((total-added) ? " (" + (total-added) + " already counted)" : "");
-        } else if(slot.key === "completed" || slot.key === "intransit"){
-          const recs = await parseReturnsCsv(file);
-          const r = mergeBy(data.returns, recs, x=>x.suborderNo);
-          data.returns = r.merged; added = r.added; total = recs.length;
-          msg.className = "teal";
-          msg.textContent = added + " new rows added" + ((total-added) ? " (" + (total-added) + " already counted)" : "");
-        } else if(slot.key === "payments"){
-          const parsed = await parsePaymentsXlsx(file);
-          const rReceived = mergeBy(data.payments, parsed.received, x=>x.subOrderNo);
-          data.payments = rReceived.merged;
-          const rOutstanding = mergeBy(data.outstanding, parsed.outstanding, x=>x.subOrderNo);
-          data.outstanding = rOutstanding.merged;
-          const rAds = mergeBy(data.adsCostRows, parsed.adsCostRows, x=>x.deductionDate+"|"+x.campaignId);
-          data.adsCostRows = rAds.merged;
-          const rRef = mergeBy(data.referralRows, parsed.referralRows, x=>x.rewardId || (x.paymentDate+"|"+x.reason+"|"+x.netAmount));
-          data.referralRows = rRef.merged;
-          const rComp = mergeBy(data.compensationRows, parsed.compensationRows, x=>x.date+"|"+x.program+"|"+x.reason+"|"+x.amount);
-          data.compensationRows = rComp.merged;
-          const rPayReturns = mergeBy(data.returns, parsed.paymentReturns, x=>x.suborderNo);
-          data.returns = rPayReturns.merged;
-          let autoFilled = 0;
-          parsed.returnLossRows.forEach(r => {
-            const isUntouched = data.returnCosts[r.subOrderNo] === undefined || data.returnCostsAuto[r.subOrderNo];
-            if(isUntouched){
-              data.returnCosts[r.subOrderNo] = r.amount;
-              data.returnCostsAuto[r.subOrderNo] = true;
-              autoFilled++;
-            }
-          });
-          msg.className = "teal";
-          const parts = [];
-          if(rReceived.added) parts.push(rReceived.added + " settled");
-          if(rOutstanding.added) parts.push(rOutstanding.added + " unscheduled");
-          if(rAds.added) parts.push(rAds.added + " ads cost");
-          if(rRef.added) parts.push(rRef.added + " referral");
-          if(rComp.added) parts.push(rComp.added + " compensation/recovery");
-          if(rPayReturns.added) parts.push(rPayReturns.added + " returns found");
-          if(autoFilled) parts.push(autoFilled + " return loss amounts auto-filled");
-          msg.textContent = parts.length ? "Added: " + parts.join(", ") : "No new rows found (already counted)";
-        }
-        persist();
-      }catch(e){
-        msg.className = "alert";
-        msg.textContent = e.message || "Could not read this file";
-      }
-    };
-    wrap.appendChild(btn); wrap.appendChild(input); wrap.appendChild(msg);
-    el.appendChild(wrap);
-  });
-}
-
-const KPI_DEFS = [
-  { key:"totalSale", label:"Total Sale", icon:"ic-rupee", tone:"ink", bg:"rgba(36,84,199,0.12)", iconColor:"var(--gold)" },
-  { key:"totalCost", label:"Total Cost", icon:"ic-box", tone:"ink", bg:"rgba(91,100,120,0.12)", iconColor:"var(--muted)" },
-  { key:"profit", label:"Profit", icon:"ic-trend", tone:"teal", bg:"rgba(21,115,71,0.12)", iconColor:"var(--teal)" },
-  { key:"gst", label:"GST", icon:"ic-percent", tone:"ink", bg:"rgba(91,100,120,0.12)", iconColor:"var(--muted)" },
-  { key:"rtoLoss", label:"RTO loss", icon:"ic-x", tone:"muted", bg:"rgba(91,100,120,0.12)", iconColor:"var(--muted)" },
-  { key:"crLoss", label:"Customer Return", icon:"ic-return", tone:"alert", bg:"rgba(180,35,24,0.12)", iconColor:"var(--alert)" },
-  { key:"netProfit", label:"Net Profit", icon:"ic-trend", tone:"gold", bg:"rgba(36,84,199,0.12)", iconColor:"var(--gold)" },
-];
-
-function renderSummaryCard(stats){
-  const el = document.getElementById("summaryCard");
-  const dateStr = stats.dateRange ? `${stats.dateRange.from} – ${stats.dateRange.to}` : "No orders yet";
-  const netTone = stats.netProfit >= 0 ? "var(--teal)" : "var(--alert)";
-  el.innerHTML = `
-    <div class="hero">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;">
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-            <div style="width:26px;height:26px;border-radius:6px;background:var(--gold);display:flex;align-items:center;justify-content:center;">
-              <svg class="icon" style="stroke:#fff;width:14px;height:14px;"><use href="#ic-box"/></svg>
-            </div>
-            <div class="display" style="font-size:16px;font-weight:700;">${esc(currentOwner)}</div>
-          </div>
-          <div class="muted" style="font-size:12px;">${esc(dateStr)} — ${stats.totalOrders} orders processed</div>
-        </div>
-        <div style="text-align:right;">
-          <div class="muted" style="font-size:11.5px;">Net Profit</div>
-          <div class="display tabular" style="font-size:32px;font-weight:700;color:${netTone};line-height:1.1;">${fmt(stats.netProfit)}</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
-        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--gold);"><use href="#ic-rupee"/></svg>Sale <b class="tabular">${fmt(stats.totalSale)}</b></div>
-        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--muted);"><use href="#ic-box"/></svg>Cost <b class="tabular">${fmt(stats.totalCost)}</b></div>
-        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--teal);"><use href="#ic-trend"/></svg>Profit <b class="tabular">${fmt(stats.profit)}</b></div>
-        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--gold);"><use href="#ic-check"/></svg>Received <b class="tabular">${fmt(stats.settlement)}</b></div>
-        <div class="hero-chip"><svg class="icon" style="width:13px;height:13px;color:var(--muted);"><use href="#ic-clock"/></svg>Pending <b class="tabular">${fmt(stats.pendingAmount)}</b></div>
-      </div>
-    </div>`;
-}
-
-function renderKpis(stats){
-  const el = document.getElementById("kpiGrid");
-  const subs = {
-    totalSale: stats.orderCount + " delivered orders",
-    totalCost: "product + other + ads" + ((stats.globalOtherCost+stats.itemizedOtherCost) ? " + misc ₹" + Math.round(stats.globalOtherCost+stats.itemizedOtherCost).toLocaleString("en-IN") : ""),
-    profit: "sale − cost",
-    gst: data.settings.gstPercent + "% of sale",
-    rtoLoss: stats.rtoCount + " orders, no loss",
-    crLoss: stats.crCount
-      ? (stats.crAutoCount + " real, " + stats.crDefaultCount + " est. @ ₹" + data.settings.customerReturnFlatLoss)
-      : "0 orders",
-    netProfit: "profit − gst − returns",
-  };
-  el.innerHTML = KPI_DEFS.map(k => {
-    const val = stats[k.key];
-    const toneColor = k.tone==="alert"?"var(--alert)":k.tone==="teal"?"var(--teal)":k.tone==="gold"?"var(--gold)":k.tone==="muted"?"var(--muted)":"var(--ink)";
-    return `<div class="card kpi">
-      <div class="kpi-top">
-        <div class="kpi-icon" style="background:${k.bg};">
-          <svg class="icon" style="color:${k.iconColor};width:16px;height:16px;"><use href="#${k.icon}"/></svg>
-        </div>
-      </div>
-      <div class="muted" style="font-size:11.5px;">${k.label}</div>
-      <div class="display tabular" style="font-size:19px;font-weight:700;color:${toneColor};">${fmt(val)}</div>
-      <div class="muted" style="font-size:10.5px;">${subs[k.key]}</div>
-    </div>`;
-  }).join("");
-}
-
-function renderOwnerSplit(stats){
-  const el = document.getElementById("ownerSplit");
-  const rows = data.subOwners.map(name => {
-    const s = stats.bySubOwner[name] || {sale:0,cost:0,gst:0,crLoss:0,profit:0,netProfit:0};
-    return `<div class="card" style="padding:16px;flex:1;min-width:200px;">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
-        <svg class="icon" style="color:var(--muted);"><use href="#ic-users"/></svg>
-        <div style="font-size:13px;font-weight:600;">${esc(name)}</div>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">Sale</span><span class="tabular">${fmt(s.sale)}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">Cost</span><span class="tabular">${fmt(s.cost)}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span class="muted">GST</span><span class="tabular alert">- ${fmt(s.gst)}</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px;"><span class="muted">Customer Return</span><span class="tabular alert">- ${fmt(s.crLoss)}</span></div>
-      <div style="border-top:1px solid var(--line);padding-top:8px;display:flex;justify-content:space-between;">
-        <span style="font-size:12.5px;font-weight:500;">Net Profit</span>
-        <span class="tabular gold" style="font-size:16px;font-weight:700;">${fmt(s.netProfit)}</span>
-      </div>
-    </div>`;
-  }).join("");
-  el.innerHTML = `<div style="font-size:14px;font-weight:600;margin-bottom:12px;">Owner-wise totals</div>
-    <div style="display:flex;gap:14px;flex-wrap:wrap;">${rows}</div>`;
-}
-
-function renderReturnsPanel(stats){
-  const el = document.getElementById("returnsPanel");
-  const filtered = stats.crRecs.filter(r =>
-    !returnsFilter || r.sku.toLowerCase().includes(returnsFilter) || r.productName.toLowerCase().includes(returnsFilter)
-  );
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div style="font-size:14px;font-weight:600;">Customer returns <span class="muted" style="font-weight:400;font-size:12px;">(${stats.crRecs.length} orders — edit loss per order)</span></div>
-      <div style="position:relative;">
-        <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
-        <input id="returnsSearch" placeholder="Search SKU or product" value="${esc(returnsFilter)}" style="padding-left:30px;width:220px;"/>
-      </div>
-    </div>
-    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">"From Meesho" rows use the real per-order amount from your payment file. Everything else uses the flat default from Settings until a payment file covers that order — edit any value by hand to override it.</div>
-    ${(stats.crDefaultCount > 0 && Number(data.settings.customerReturnFlatLoss) === 0) ? `<div class="alert" style="padding:0 18px 14px;font-size:12px;">⚠ Settings → "Customer return – default loss" is set to ₹0, so the ${stats.crDefaultCount} "Default guess" row${stats.crDefaultCount===1?"":"s"} below are counting as ₹0 loss until that payment file is uploaded or you set a real default.</div>` : ""}`;
-  if(!stats.crRecs.length){
-    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No customer returns uploaded yet — once you do, each one will show up here with an editable loss amount.</div>`;
-    return;
-  }
-  const rows = filtered.map(r => {
-    const val = data.returnCosts[r.suborderNo] !== undefined ? data.returnCosts[r.suborderNo] : data.settings.customerReturnFlatLoss;
-    const isAuto = !!data.returnCostsAuto[r.suborderNo];
-    const sourceBadge = isAuto
-      ? `<span class="badge" style="background:rgba(21,115,71,0.14);color:var(--teal);">From Meesho</span>`
-      : `<span class="badge">Default guess</span>`;
-    return `<tr>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(r.suborderNo)}</td>
-      <td>${esc(r.productName)}</td>
-      <td class="muted tabular">${esc(r.sku)}</td>
-      <td style="text-align:right;"><input type="number" data-suborder="${esc(r.suborderNo)}" class="crCostInput tabular" style="width:80px;text-align:right;" value="${val}"/></td>
-      <td>${sourceBadge}</td>
-    </tr>`;
-  }).join("");
-  el.innerHTML = header + `
-    <div style="border-top:1px solid var(--line);max-height:420px;overflow-y:auto;">
-      <table>
-        <thead><tr><th>Suborder</th><th>Product</th><th>SKU</th><th style="text-align:right;">Loss (₹)</th><th>Source</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
-      </table>
-    </div>`;
-  document.getElementById("returnsSearch").addEventListener("input", (e) => {
-    returnsFilter = e.target.value.toLowerCase();
-    renderReturnsPanel(computeStats(data, dateFrom, dateTo));
-  });
-  el.querySelectorAll(".crCostInput").forEach(inp => {
-    inp.addEventListener("change", (e) => {
-      const suborder = e.target.getAttribute("data-suborder");
-      data.returnCosts[suborder] = parseFloat(e.target.value) || 0;
-      delete data.returnCostsAuto[suborder];
-      persist();
-    });
-  });
-}
-
-const STATUS_DEFS = [
-  { key:"totalOrders", label:"Total Orders", icon:"ic-grid", bg:"rgba(91,100,120,0.14)", color:"#5B6478" },
-  { key:"shippedCount", label:"Shipped", icon:"ic-arrow", bg:"rgba(36,84,199,0.14)", color:"#2454C7" },
-  { key:"deliveredCount", label:"Delivered", icon:"ic-check", bg:"rgba(21,115,71,0.14)", color:"var(--teal)" },
-  { key:"cancelledCount", label:"Cancelled", icon:"ic-x", bg:"rgba(180,35,24,0.14)", color:"var(--alert)" },
-  { key:"rtoCount", label:"RTO", icon:"ic-refresh", bg:"rgba(180,83,9,0.14)", color:"#B45309" },
-  { key:"crCount", label:"Returns", icon:"ic-return", bg:"rgba(36,84,199,0.14)", color:"var(--gold)" },
-];
-
-function renderStatusRow(stats){
-  const el = document.getElementById("statusRow");
-  el.innerHTML = STATUS_DEFS.map(s => `
-    <div class="card kpi">
-      <div class="kpi-icon" style="background:${s.bg};">
-        <svg class="icon" style="color:${s.color};width:16px;height:16px;"><use href="#${s.icon}"/></svg>
-      </div>
-      <div class="muted" style="font-size:11.5px;">${s.label}</div>
-      <div class="display tabular" style="font-size:19px;font-weight:700;">${stats[s.key]}</div>
-    </div>`).join("");
-}
-
-function renderRateCard(stats){
-  const el = document.getElementById("rateCard");
-  function bar(label, pct, color){
-    return `<div style="margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px;">
-        <span class="muted">${label}</span><span class="tabular" style="color:${color};font-weight:600;">${pct.toFixed(1)}%</span>
-      </div>
-      <div style="height:6px;border-radius:4px;background:var(--surface2);overflow:hidden;">
-        <div style="height:100%;width:${Math.min(pct,100)}%;background:${color};border-radius:4px;"></div>
-      </div>
-    </div>`;
-  }
-  el.innerHTML = `<div class="card" style="padding:18px;height:100%;">
-    <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Performance rates</div>
-    ${bar("Delivery rate", stats.deliveryRate, "var(--teal)")}
-    ${bar("RTO rate", stats.rtoRate, "#ff9933")}
-    ${bar("Return rate", stats.returnRate, "var(--gold)")}
-  </div>`;
-}
-
-function renderOwnerPerfTable(stats){
-  const el = document.getElementById("ownerPerfTable");
-  const rows = data.subOwners.map(name => {
-    const s = stats.bySubOwner[name] || {orders:0,sale:0,gst:0,received:0,pending:0,returns:0};
-    return `<tr>
-      <td><span class="badge" style="background:rgba(242,183,5,0.15);color:var(--gold);">${esc(name)}</span></td>
-      <td class="tabular">${s.orders}</td>
-      <td class="tabular">${fmt(s.sale)}</td>
-      <td class="tabular">${fmt(s.gst)}</td>
-      <td class="tabular teal">${fmt(s.received)}</td>
-      <td class="tabular gold">${fmt(s.pending)}</td>
-      <td class="tabular">${s.returns}</td>
-    </tr>`;
-  }).join("");
-  el.innerHTML = `<div class="card" style="padding:0;height:100%;">
-    <div style="padding:16px 18px;font-size:14px;font-weight:600;">Owner performance</div>
-    <div style="border-top:1px solid var(--line);overflow-x:auto;">
-      <table>
-        <thead><tr><th>Owner</th><th>Orders</th><th>Total Sale</th><th>GST</th><th>Received</th><th>Pending</th><th>Returns</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  </div>`;
-}
-
-function renderReceivedPanel(stats){
-  const el = document.getElementById("receivedPanel");
-  const filtered = data.payments.filter(p =>
-    !receivedFilter || p.subOrderNo.toLowerCase().includes(receivedFilter) || (p.liveStatus||"").toLowerCase().includes(receivedFilter)
-  );
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:14px;font-weight:600;">Received payment <span class="muted" style="font-weight:400;font-size:12px;">(${data.payments.length} settlements)</span></div>
-        <div class="teal tabular" style="font-size:18px;font-weight:700;margin-top:4px;">${fmt(stats.settlement)}</div>
-      </div>
-      <div style="position:relative;">
-        <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
-        <input id="receivedSearch" placeholder="Search Sub Order No or status" value="${esc(receivedFilter)}" style="padding-left:30px;width:230px;"/>
-      </div>
-    </div>`;
-  if(!data.payments.length){
-    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No payment file uploaded yet — upload it in the Upload data tab to see settlements here.</div>`;
-    return;
-  }
-  const rows = filtered.map(p => `<tr>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(p.subOrderNo)}</td>
-      <td>${esc(p.liveStatus || "—")}</td>
-      <td style="text-align:right;" class="teal tabular">${fmt(p.finalSettlement)}</td>
-    </tr>`).join("");
-  el.innerHTML = header + `
-    <div style="border-top:1px solid var(--line);max-height:420px;overflow-y:auto;">
-      <table>
-        <thead><tr><th>Sub Order No</th><th>Live status</th><th style="text-align:right;">Amount received</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="3" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
-      </table>
-    </div>`;
-  document.getElementById("receivedSearch").addEventListener("input", (e) => {
-    receivedFilter = e.target.value.toLowerCase();
-    renderReceivedPanel(computeStats(data, dateFrom, dateTo));
-  });
-}
-
-function renderPendingPanel(stats){
-  const el = document.getElementById("pendingPanel");
-  const filtered = stats.pendingOrders.filter(o =>
-    !pendingFilter || o.sku.toLowerCase().includes(pendingFilter) || o.productName.toLowerCase().includes(pendingFilter) || o.subOrderNo.toLowerCase().includes(pendingFilter)
-  );
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:14px;font-weight:600;">Pending payment <span class="muted" style="font-weight:400;font-size:12px;">(${stats.pendingOrders.length} delivered orders, no settlement found yet)</span></div>
-        <div class="gold tabular" style="font-size:18px;font-weight:700;margin-top:4px;">${fmt(stats.pendingAmount)}</div>
-      </div>
-      <div style="position:relative;">
-        <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
-        <input id="pendingSearch" placeholder="Search Sub Order No, SKU or product" value="${esc(pendingFilter)}" style="padding-left:30px;width:250px;"/>
-      </div>
-    </div>
-    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Rows marked "Meesho figure" use the unscheduled settlement amount from your payment file; the rest are estimated from sale amount since no such record was found yet.</div>`;
-  if(!stats.saleOrders.length){
-    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No delivered orders yet.</div>`;
-    return;
-  }
-  const rows = filtered.map(o => `<tr>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(o.subOrderNo)}</td>
-      <td>${esc(o.productName)}</td>
-      <td class="muted tabular">${esc(o.sku)}</td>
-      <td>${o.isEstimate ? `<span class="badge">Estimate</span>` : `<span class="badge" style="background:rgba(36,84,199,0.14);color:var(--gold);">Meesho figure</span>`}</td>
-      <td style="text-align:right;" class="gold tabular">${fmt(o.expectedAmount)}</td>
-    </tr>`).join("");
-  el.innerHTML = header + `
-    <div style="border-top:1px solid var(--line);max-height:400px;overflow-y:auto;">
-      <table>
-        <thead><tr><th>Sub Order No</th><th>Product</th><th>SKU</th><th>Source</th><th style="text-align:right;">Expected amount</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">All caught up — nothing pending</td></tr>`}</tbody>
-      </table>
-    </div>`;
-  document.getElementById("pendingSearch").addEventListener("input", (e) => {
-    pendingFilter = e.target.value.toLowerCase();
-    renderPendingPanel(computeStats(data, dateFrom, dateTo));
-  });
-}
-
-function renderCostPanel(stats){
-  const el = document.getElementById("costPanel");
-  const map = new Map();
-  data.orders.concat(data.returns).forEach(r => { if(r.sku && !map.has(r.sku)) map.set(r.sku, r.productName); });
-  let rows = Array.from(map.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
-  if(costFilter) rows = rows.filter(([sku,name]) => sku.toLowerCase().includes(costFilter) || name.toLowerCase().includes(costFilter));
-  const warn = stats.missing.length
-    ? `<div class="alert" style="font-size:11.5px;display:flex;gap:5px;align-items:center;">⚠ ${stats.missing.length} missing cost</div>`
-    : "";
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div style="font-size:14px;font-weight:600;">Product cost prices <span class="muted" style="font-weight:400;font-size:12px;">(${map.size} SKUs)</span></div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        ${warn}
-        <button class="btn-ghost" id="downloadCostSheetBtn"><svg class="icon"><use href="#ic-download"/></svg>Download sheet</button>
-        <button class="btn-ghost" id="uploadCostSheetBtn"><svg class="icon"><use href="#ic-upload"/></svg>Bulk update from Excel</button>
-        <input type="file" id="costSheetFile" accept=".csv,.xlsx,.xls" style="display:none;"/>
-        <div style="position:relative;">
-          <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
-          <input id="costSearch" placeholder="Search SKU or product" value="${esc(costFilter)}" style="padding-left:30px;width:200px;"/>
-        </div>
-      </div>
-    </div>
-    <div id="costSheetMsg" class="muted" style="padding:0 18px 10px;font-size:11.5px;"></div>`;
-  let tableRows = rows.map(([sku, name]) => {
-    const c = data.costs[sku] || {};
-    const cost = c.cost ?? "";
-    const other = c.otherCost ?? "";
-    const owner = c.ownerTag || data.subOwners[0];
-    const opts = data.subOwners.map(o => `<option value="${esc(o)}" ${o===owner?"selected":""}>${esc(o)}</option>`).join("");
-    return `<tr>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(sku)}</td>
-      <td>${esc(name)}</td>
-      <td style="text-align:right;"><input type="number" data-sku="${esc(sku)}" data-name="${esc(name)}" data-field="cost" class="costInput tabular" style="width:80px;text-align:right;" value="${cost}" placeholder="0"/></td>
-      <td style="text-align:right;"><input type="number" data-sku="${esc(sku)}" data-name="${esc(name)}" data-field="otherCost" class="costInput tabular" style="width:80px;text-align:right;" value="${other}" placeholder="0"/></td>
-      <td><select data-sku="${esc(sku)}" data-name="${esc(name)}" class="ownerSelect">${opts}</select></td>
-    </tr>`;
-  }).join("");
-  el.innerHTML = header + `
-    <div style="border-top:1px solid var(--line);max-height:440px;overflow-y:auto;">
-      <table>
-        <thead><tr><th>SKU</th><th>Product</th><th style="text-align:right;">Cost price (₹)</th><th style="text-align:right;">Other cost (₹)</th><th>Owner</th></tr></thead>
-        <tbody>${tableRows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
-      </table>
-    </div>`;
-  document.getElementById("costSearch").addEventListener("input", (e) => {
-    costFilter = e.target.value.toLowerCase();
-    renderCostPanel(computeStats(data, dateFrom, dateTo));
-  });
-  document.getElementById("downloadCostSheetBtn").addEventListener("click", () => downloadCostSheet(rows));
-  document.getElementById("uploadCostSheetBtn").addEventListener("click", () => document.getElementById("costSheetFile").click());
-  document.getElementById("costSheetFile").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if(!file) return;
-    const msg = document.getElementById("costSheetMsg");
-    msg.textContent = "Reading...";
-    try{
-      const { updated, skipped } = await applyCostSheet(file);
-      msg.className = "teal";
-      msg.textContent = `Updated ${updated} SKU${updated===1?"":"s"}` + (skipped ? `, ${skipped} row${skipped===1?"":"s"} skipped (no matching SKU column / unknown owner)` : "");
-      persist();
-    }catch(err){
-      msg.className = "alert";
-      msg.textContent = err.message || "Could not read this file";
-    }
-  });
-  el.querySelectorAll(".costInput").forEach(inp => {
-    inp.addEventListener("change", (e) => {
-      const sku = e.target.getAttribute("data-sku");
-      const name = e.target.getAttribute("data-name");
-      const field = e.target.getAttribute("data-field");
-      const val = parseFloat(e.target.value) || 0;
-      const existing = data.costs[sku] || { sku, productName:name, cost:0, otherCost:0, ownerTag:data.subOwners[0] };
-      existing[field] = val;
-      existing.productName = name;
-      data.costs[sku] = existing;
-      persist();
-    });
-  });
-  el.querySelectorAll(".ownerSelect").forEach(sel => {
-    sel.addEventListener("change", (e) => {
-      const sku = e.target.getAttribute("data-sku");
-      const name = e.target.getAttribute("data-name");
-      const existing = data.costs[sku] || { sku, productName:name, cost:0, otherCost:0, ownerTag:data.subOwners[0] };
-      existing.ownerTag = e.target.value;
-      existing.productName = name;
-      data.costs[sku] = existing;
-      persist();
-    });
-  });
-}
-
-function renderStockPanel(){
-  const el = document.getElementById("stockPanel");
-  const map = new Map();
-  data.orders.concat(data.returns).forEach(r => { if(r.sku && !map.has(r.sku)) map.set(r.sku, r.productName); });
-  let rows = Array.from(map.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
-  if(stockFilter) rows = rows.filter(([sku,name]) => sku.toLowerCase().includes(stockFilter) || name.toLowerCase().includes(stockFilter));
-  const sold = computeSoldBySku(data);
-  const threshold = Number(data.settings.lowStockThreshold) || 0;
-  const lowCount = Array.from(map.keys()).filter(sku => {
-    const qty = data.stock[sku] ? Number(data.stock[sku].qty) || 0 : 0;
-    return (sku in data.stock) && qty <= threshold;
-  }).length;
-  const warn = lowCount
-    ? `<div class="alert" style="font-size:11.5px;display:flex;gap:5px;align-items:center;">⚠ ${lowCount} low / out of stock</div>`
-    : "";
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div style="font-size:14px;font-weight:600;">Stock on hand <span class="muted" style="font-weight:400;font-size:12px;">(${map.size} SKUs)</span></div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        ${warn}
-        <button class="btn-ghost" id="downloadStockSheetBtn"><svg class="icon"><use href="#ic-download"/></svg>Download sheet</button>
-        <button class="btn-ghost" id="uploadStockSheetBtn"><svg class="icon"><use href="#ic-upload"/></svg>Bulk update from Excel</button>
-        <input type="file" id="stockSheetFile" accept=".csv,.xlsx,.xls" style="display:none;"/>
-        <div style="position:relative;">
-          <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
-          <input id="stockSearch" placeholder="Search SKU or product" value="${esc(stockFilter)}" style="padding-left:30px;width:200px;"/>
-        </div>
-      </div>
-    </div>
-    <div id="stockSheetMsg" class="muted" style="padding:0 18px 10px;font-size:11.5px;"></div>
-    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Set the current stock you're holding for each SKU. "Sold (all time)" is a read-only tally from your delivered orders, for reference while you count.</div>`;
-  let tableRows = rows.map(([sku, name]) => {
-    const rec = data.stock[sku];
-    const qty = rec ? rec.qty : "";
-    const soldQty = sold[sku] || 0;
-    let statusBadge;
-    if(!(sku in data.stock)){
-      statusBadge = `<span class="badge">Not set</span>`;
-    } else if((Number(qty)||0) <= 0){
-      statusBadge = `<span class="badge" style="background:rgba(180,35,24,0.14);color:var(--alert);">Out of stock</span>`;
-    } else if((Number(qty)||0) <= threshold){
-      statusBadge = `<span class="badge" style="background:rgba(180,83,9,0.14);color:#B45309;">Low stock</span>`;
-    } else {
-      statusBadge = `<span class="badge" style="background:rgba(21,115,71,0.14);color:var(--teal);">In stock</span>`;
-    }
-    return `<tr>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(sku)}</td>
-      <td>${esc(name)}</td>
-      <td class="muted tabular" style="text-align:right;">${soldQty}</td>
-      <td style="text-align:right;"><input type="number" data-sku="${esc(sku)}" data-name="${esc(name)}" class="stockInput tabular" style="width:80px;text-align:right;" value="${qty}" placeholder="0"/></td>
-      <td>${statusBadge}</td>
-    </tr>`;
-  }).join("");
-  el.innerHTML = header + `
-    <div style="border-top:1px solid var(--line);max-height:440px;overflow-y:auto;">
-      <table>
-        <thead><tr><th>SKU</th><th>Product</th><th style="text-align:right;">Sold (all time)</th><th style="text-align:right;">Current stock</th><th>Status</th></tr></thead>
-        <tbody>${tableRows || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
-      </table>
-    </div>`;
-  document.getElementById("stockSearch").addEventListener("input", (e) => {
-    stockFilter = e.target.value.toLowerCase();
-    renderStockPanel();
-  });
-  document.getElementById("downloadStockSheetBtn").addEventListener("click", () => downloadStockSheet(rows));
-  document.getElementById("uploadStockSheetBtn").addEventListener("click", () => document.getElementById("stockSheetFile").click());
-  document.getElementById("stockSheetFile").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if(!file) return;
-    const msg = document.getElementById("stockSheetMsg");
-    msg.textContent = "Reading...";
-    try{
-      const { updated, skipped } = await applyStockSheet(file);
-      msg.className = "teal";
-      msg.textContent = `Updated ${updated} SKU${updated===1?"":"s"}` + (skipped ? `, ${skipped} row${skipped===1?"":"s"} skipped (no matching SKU/stock column)` : "");
-      persist();
-    }catch(err){
-      msg.className = "alert";
-      msg.textContent = err.message || "Could not read this file";
-    }
-  });
-  el.querySelectorAll(".stockInput").forEach(inp => {
-    inp.addEventListener("change", (e) => {
-      const sku = e.target.getAttribute("data-sku");
-      const val = parseFloat(e.target.value) || 0;
-      data.stock[sku] = { qty: val };
-      persist();
-    });
-  });
-}
-
-function renderOtherCostPanel(stats){
-  const el = document.getElementById("otherCostPanel");
-  const entries = (data.otherCosts||[]).slice().sort((a,b)=> (b.date||"").localeCompare(a.date||""));
-  const total = entries.reduce((s,r)=>s+(Number(r.amount)||0),0);
-  const todayStr = new Date().toISOString().slice(0,10);
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:14px;font-weight:600;">Other cost ledger <span class="muted" style="font-weight:400;font-size:12px;">(${entries.length} entries)</span></div>
-        <div class="alert tabular" style="font-size:18px;font-weight:700;margin-top:4px;">- ${fmt(total)}</div>
-      </div>
-    </div>
-    <div class="muted" style="padding:0 18px 14px;font-size:11.5px;">Log packaging, courier supplies, labour, or any other misc. expense here with a date and note. The total is subtracted from Net Profit alongside the flat "Other cost" amount in Settings (if you've set one).</div>
-    <div style="padding:0 18px 18px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-      <div><div class="muted" style="font-size:11px;margin-bottom:4px;">Date</div><input type="date" id="ocDateInput" value="${todayStr}" style="width:150px;"/></div>
-      <div style="flex:1;min-width:180px;"><div class="muted" style="font-size:11px;margin-bottom:4px;">Description</div><input type="text" id="ocDescInput" placeholder="e.g. Packaging material" style="width:100%;font-family:'Inter',sans-serif;"/></div>
-      <div><div class="muted" style="font-size:11px;margin-bottom:4px;">Amount (₹)</div><input type="number" id="ocAmountInput" placeholder="0" style="width:110px;"/></div>
-      <button class="btn-gold" id="ocAddBtn"><svg class="icon"><use href="#ic-plus"/></svg>Add entry</button>
-    </div>`;
-  const rows = entries.map(r => `<tr>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(r.date||"—")}</td>
-      <td>${esc(r.description||"—")}</td>
-      <td style="text-align:right;" class="alert tabular">- ${fmt(Number(r.amount)||0)}</td>
-      <td style="text-align:right;"><button class="btn-ghost danger" data-id="${esc(r.id)}" style="padding:4px 9px;"><svg class="icon" style="width:13px;height:13px;"><use href="#ic-trash"/></svg></button></td>
-    </tr>`).join("");
-  el.innerHTML = header + `
-    <div style="border-top:1px solid var(--line);max-height:420px;overflow-y:auto;">
-      <table>
-        <thead><tr><th>Date</th><th>Description</th><th style="text-align:right;">Amount</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px;">No entries yet — add your first misc. expense above.</td></tr>`}</tbody>
-      </table>
-    </div>`;
-  document.getElementById("ocAddBtn").addEventListener("click", () => {
-    const dateVal = document.getElementById("ocDateInput").value || todayStr;
-    const descVal = document.getElementById("ocDescInput").value.trim();
-    const amtVal = parseFloat(document.getElementById("ocAmountInput").value) || 0;
-    if(!descVal || !amtVal){ alert("Please enter a description and an amount."); return; }
-    data.otherCosts = data.otherCosts || [];
-    data.otherCosts.push({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), date: dateVal, description: descVal, amount: amtVal });
-    persist();
-  });
-  el.querySelectorAll("[data-id]").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      const id = e.currentTarget.getAttribute("data-id");
-      data.otherCosts = (data.otherCosts||[]).filter(r => r.id !== id);
-      persist();
-    });
-  });
-}
-
-const ORDER_STATUS_OPTIONS = ["DELIVERED","SHIPPED","READY_TO_SHIP","CANCELLED"];
-function renderOrdersPanel(stats){
-  const el = document.getElementById("ordersPanel");
-  const crSuborderSet = new Set(data.returns.filter(r=>r.type==="CUSTOMER_RETURN").map(r=>r.suborderNo));
-  const rtoSuborderSet = new Set(data.returns.filter(r=>r.type==="RTO").map(r=>r.suborderNo));
-  let rows = data.orders.slice().sort((a,b)=> (b.orderDate||"").localeCompare(a.orderDate||""));
-  if(ordersStatusFilter) rows = rows.filter(o => o.status === ordersStatusFilter);
-  if(ordersFilter){
-    rows = rows.filter(o =>
-      o.subOrderNo.toLowerCase().includes(ordersFilter) ||
-      o.sku.toLowerCase().includes(ordersFilter) ||
-      o.productName.toLowerCase().includes(ordersFilter)
-    );
-  }
-  const statusOpts = `<option value="">All statuses</option>` + ORDER_STATUS_OPTIONS.map(s=>`<option value="${s}" ${ordersStatusFilter===s?"selected":""}>${s.replace(/_/g," ")}</option>`).join("");
-  const header = `
-    <div style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-      <div style="font-size:14px;font-weight:600;">All orders <span class="muted" style="font-weight:400;font-size:12px;">(${data.orders.length} total${ordersFilter||ordersStatusFilter?", "+rows.length+" shown":""})</span></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <select id="ordersStatusSelect">${statusOpts}</select>
-        <div style="position:relative;">
-          <svg class="icon" style="position:absolute;left:9px;top:9px;color:var(--muted);"><use href="#ic-search"/></svg>
-          <input id="ordersSearch" placeholder="Search Sub Order No, SKU or product" value="${esc(ordersFilter)}" style="padding-left:30px;width:260px;"/>
-        </div>
-      </div>
-    </div>`;
-  if(!data.orders.length){
-    el.innerHTML = header + `<div style="padding:16px 18px;font-size:13px;" class="muted">No orders uploaded yet — upload your Orders export CSV in the Upload data tab.</div>`;
-    return;
-  }
-  const tableRows = rows.slice(0, 500).map(o => {
-    let tag;
-    if(crSuborderSet.has(o.subOrderNo)) tag = `<span class="badge" style="background:rgba(36,84,199,0.14);color:var(--gold);">Return</span>`;
-    else if(rtoSuborderSet.has(o.subOrderNo)) tag = `<span class="badge" style="background:rgba(180,83,9,0.14);color:#B45309;">RTO</span>`;
-    else if(o.status === "DELIVERED") tag = `<span class="badge" style="background:rgba(21,115,71,0.14);color:var(--teal);">Delivered</span>`;
-    else if(o.status === "CANCELLED") tag = `<span class="badge" style="background:rgba(180,35,24,0.14);color:var(--alert);">Cancelled</span>`;
-    else tag = `<span class="badge">${esc(o.status.replace(/_/g," "))}</span>`;
-    return `<tr>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(o.subOrderNo)}</td>
-      <td class="muted tabular" style="white-space:nowrap;">${esc(o.orderDate||"—")}</td>
-      <td>${esc(o.productName)}</td>
-      <td class="muted tabular">${esc(o.sku)}</td>
-      <td class="tabular" style="text-align:center;">${o.qty}</td>
-      <td class="tabular" style="text-align:right;">${fmt(o.saleAmount)}</td>
-      <td>${tag}</td>
-    </tr>`;
-  }).join("");
-  el.innerHTML = header + `
-    ${rows.length > 500 ? `<div class="muted" style="padding:0 18px 10px;font-size:11px;">Showing the most recent 500 of ${rows.length} matching orders — narrow your search to see more precisely.</div>` : ""}
-    <div style="border-top:1px solid var(--line);max-height:520px;overflow-y:auto;">
-      <table>
-        <thead><tr><th>Sub Order No</th><th>Order Date</th><th>Product</th><th>SKU</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Sale Amount</th><th>Status</th></tr></thead>
-        <tbody>${tableRows || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No matches</td></tr>`}</tbody>
-      </table>
-    </div>`;
-  document.getElementById("ordersSearch").addEventListener("input", (e) => {
-    ordersFilter = e.target.value.toLowerCase();
-    renderOrdersPanel(computeStats(data, dateFrom, dateTo));
-  });
-  document.getElementById("ordersStatusSelect").addEventListener("change", (e) => {
-    ordersStatusFilter = e.target.value;
-    renderOrdersPanel(computeStats(data, dateFrom, dateTo));
-  });
-}
-
-function renderReconcileCard(stats){
-  const el = document.getElementById("reconcileCard");
-  const actual = Number(data.settings.actualBankReceived) || 0;
-  const expected = stats.expectedBankTotal;
-  const diff = actual - expected;
-  const hasActual = !!data.settings.actualBankReceived;
-  let statusLine = "";
-  if(hasActual){
-    if(Math.abs(diff) < 1){
-      statusLine = `<div class="teal" style="font-size:12.5px;font-weight:600;margin-top:10px;">✓ Matches — within ₹1 of what Meesho's files say you should have received.</div>`;
-    } else if(diff < 0){
-      statusLine = `<div class="alert" style="font-size:12.5px;font-weight:600;margin-top:10px;">⚠ Your bank is short by ${fmt(Math.abs(diff))} vs what the uploaded files say Meesho sent. Possible causes: a payment file for this period isn't uploaded yet, Meesho batched/delayed the transfer, or TDS/other deductions not captured here.</div>`;
-    } else {
-      statusLine = `<div class="gold" style="font-size:12.5px;font-weight:600;margin-top:10px;">ℹ Your bank shows ${fmt(diff)} more than the files account for — you may have older settlements included, or payments from a period not yet uploaded here.</div>`;
-    }
-  }
-  el.innerHTML = `
-    <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:7px;"><svg class="icon" style="color:var(--muted);"><use href="#ic-bank"/></svg>Reconcile with your bank</div>
-    <div class="muted" style="font-size:11.5px;margin:5px 0 10px;">What Meesho's files say you should have received, all in — not just order settlements.</div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span class="muted">Order settlements (received)</span><span class="tabular">${fmt(stats.settlement)}</span></div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span class="muted">+ Referral payments</span><span class="tabular">${fmt(stats.referralTotal)}</span></div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span class="muted">+ Compensation &amp; recovery</span><span class="tabular">${fmt(stats.compensationTotal)}</span></div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;"><span class="muted">− Ads cost (from file)</span><span class="tabular alert">- ${fmt(stats.adsCostFromFile)}</span></div>
-    <div style="border-top:1px solid var(--line);padding-top:8px;display:flex;justify-content:space-between;margin-bottom:12px;">
-      <span style="font-size:12.5px;font-weight:600;">Expected in bank</span>
-      <span class="tabular gold" style="font-size:15px;font-weight:700;">${fmt(expected)}</span>
-    </div>
-    <div style="display:flex;gap:8px;align-items:flex-end;">
-      <div style="flex:1;">
-        <div class="muted" style="font-size:11px;margin-bottom:4px;">What actually landed in your bank (₹)</div>
-        <input type="number" id="bankActualInput" value="${data.settings.actualBankReceived || ""}" placeholder="Enter your bank total" style="width:100%;"/>
-      </div>
-    </div>
-    ${statusLine}
-  `;
-  document.getElementById("bankActualInput").addEventListener("change", (e) => {
-    data.settings.actualBankReceived = parseFloat(e.target.value) || 0;
-    persist();
-  });
-}
-
-function renderCharts(stats){
-  const financeCtx = document.getElementById("financeChart");
-  const outcomeCtx = document.getElementById("outcomeChart");
-  const trendCtx = document.getElementById("trendChart");
-  if(typeof Chart === "undefined"){
-    [financeCtx, outcomeCtx, trendCtx].forEach(c => {
-      const p = c.parentElement;
-      p.innerHTML = '<div class="muted" style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;text-align:center;padding:0 20px;">Charts library failed to load (check your internet connection) — the rest of the dashboard still works.</div>';
-    });
-    return;
-  }
-  if(financeChartInstance) financeChartInstance.destroy();
-  if(outcomeChartInstance) outcomeChartInstance.destroy();
-  if(trendChartInstance) trendChartInstance.destroy();
-  const gridColor = "#E1E5F0";
-  const textColor = "#5B6478";
-
-  trendChartInstance = new Chart(trendCtx, {
-    type: "line",
-    data: {
-      labels: stats.trend.map(t=>t.month),
-      datasets: [
-        { label:"Sales", data: stats.trend.map(t=>t.sales), borderColor:"#2454C7", backgroundColor:"#2454C7", tension:0.35, yAxisID:"y", pointRadius:3 },
-        { label:"Orders", data: stats.trend.map(t=>t.orders), borderColor:"#157347", backgroundColor:"#157347", tension:0.35, yAxisID:"y1", pointRadius:3 },
-      ]
-    },
-    options: {
-      responsive:true, maintainAspectRatio:false,
-      plugins: {
-        legend: { position:"top", align:"end", labels:{ color:textColor, font:{size:11}, boxWidth:10 } },
-        title: { display:true, text:"Sales & orders trend", color:"#12162B", font:{ family:"Space Grotesk", size:13, weight:"600" }, align:"start" }
-      },
-      scales: {
-        x: { ticks:{ color:textColor, font:{size:10.5} }, grid:{ display:false } },
-        y: { position:"left", ticks:{ color:textColor, font:{size:10} }, grid:{ color:gridColor } },
-        y1: { position:"right", ticks:{ color:textColor, font:{size:10} }, grid:{ display:false } },
-      }
-    }
-  });
-
-  financeChartInstance = new Chart(financeCtx, {
-    type: "bar",
-    data: {
-      labels: ["Sale", "Cost", "Profit", "GST", "Net Profit"],
-      datasets: [{
-        data: [stats.totalSale, stats.totalCost, stats.profit, stats.gst, stats.netProfit],
-        backgroundColor: ["#2454C7", "#5B6478", "#157347", "#B42318", "#2454C7"],
-        borderRadius: 5,
-        maxBarThickness: 44,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display:false }, title: { display:true, text:"Financial overview", color:"#12162B", font:{ family:"Space Grotesk", size:13, weight:"600" }, padding:{bottom:12} } },
-      scales: {
-        x: { ticks:{ color:textColor, font:{size:10.5} }, grid:{ display:false } },
-        y: { ticks:{ color:textColor, font:{size:10} }, grid:{ color:gridColor } }
-      }
-    }
-  });
-
-  outcomeChartInstance = new Chart(outcomeCtx, {
-    type: "doughnut",
-    data: {
-      labels: ["Delivered", "In progress", "RTO", "Customer Return"],
-      datasets: [{
-        data: [stats.deliveredCount, stats.inProgressCount, stats.rtoCount, stats.crCount],
-        backgroundColor: ["#157347", "#5B6478", "#B45309", "#2454C7"],
-        borderWidth: 0,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, cutout: "62%",
-      plugins: {
-        legend: { position:"bottom", labels:{ color:textColor, font:{size:10.5}, boxWidth:9, padding:12 } },
-        title: { display:true, text:"Order outcomes", color:"#12162B", font:{ family:"Space Grotesk", size:13, weight:"600" }, padding:{bottom:12} }
-      }
-    }
-  });
-}
-
-function exportSummaryCsv(stats){
-  const lines = [
-    ["Metric","Value"],
-    ["Business", currentOwner],
-    ["Date range", stats.dateRange ? stats.dateRange.from + " to " + stats.dateRange.to : "N/A"],
-    ["Total Sale", stats.totalSale.toFixed(2)],
-    ["Total Cost (incl. ads + other)", stats.totalCost.toFixed(2)],
-    ["Ads Cost", stats.adsCost.toFixed(2)],
-    ["Other Cost (flat, Settings)", stats.globalOtherCost.toFixed(2)],
-    ["Other Cost (itemised ledger)", stats.itemizedOtherCost.toFixed(2)],
-    ["Profit", stats.profit.toFixed(2)],
-    ["GST (" + data.settings.gstPercent + "%)", stats.gst.toFixed(2)],
-    ["RTO count", stats.rtoCount],
-    ["RTO loss", stats.rtoLoss.toFixed(2)],
-    ["Customer Return count", stats.crCount],
-    ["Customer Return loss", stats.crLoss.toFixed(2)],
-    ["Net Profit", stats.netProfit.toFixed(2)],
-    ["Meesho settlement received", stats.settlement.toFixed(2)],
-    ["Expected bank total (settlement+referral+compensation-ads)", stats.expectedBankTotal.toFixed(2)],
-  ];
-  const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = currentOwner.replace(/\s+/g,"_") + "_summary.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function render(){
-  renderOwnerBar();
-  renderUploadGrid();
-  const stats = computeStats(data, dateFrom, dateTo);
-  const safeCalls = [
-    () => renderSummaryCard(stats),
-    () => renderStatusRow(stats),
-    () => renderKpis(stats),
-    () => renderRateCard(stats),
-    () => renderOwnerPerfTable(stats),
-    () => renderOwnerSplit(stats),
-    () => renderReturnsPanel(stats),
-    () => renderReceivedPanel(stats),
-    () => renderPendingPanel(stats),
-    () => renderCostPanel(stats),
-    () => renderOtherCostPanel(stats),
-    () => renderOrdersPanel(stats),
-    () => renderStockPanel(),
-    () => renderCharts(stats),
-    () => renderReconcileCard(stats),
-  ];
-  safeCalls.forEach(fn => {
-    try{ fn(); }catch(err){ console.error("Dashboard section failed to render:", err); }
-  });
-  document.getElementById("gstInput").value = data.settings.gstPercent;
-  document.getElementById("crFlatInput").value = data.settings.customerReturnFlatLoss;
-  document.getElementById("adsCostInput").value = data.settings.adsCost;
-  document.getElementById("otherCostInput").value = data.settings.otherCost || 0;
-  document.getElementById("lowStockInput").value = data.settings.lowStockThreshold;
-  document.getElementById("owner1Name").value = data.subOwners[0];
-  document.getElementById("owner2Name").value = data.subOwners[1];
-  document.getElementById("settlementVal").textContent = fmt(stats.settlement);
-  document.getElementById("dataMeta").textContent = stats.totalOrders
-    ? stats.totalOrders + " orders, " + stats.crCount + " returns, " + stats.rtoCount + " RTO" + (stats.dateRange ? " (" + stats.dateRange.from + " to " + stats.dateRange.to + ")" : "")
-    : "No data uploaded yet";
-  document.getElementById("exportBtn").onclick = () => exportSummaryCsv(stats);
-}
-
-document.getElementById("gstInput").addEventListener("change", (e) => {
-  data.settings.gstPercent = parseFloat(e.target.value) || 0;
-  persist();
-});
-document.getElementById("crFlatInput").addEventListener("change", (e) => {
-  data.settings.customerReturnFlatLoss = parseFloat(e.target.value) || 0;
-  persist();
-});
-document.getElementById("adsCostInput").addEventListener("change", (e) => {
-  data.settings.adsCost = parseFloat(e.target.value) || 0;
-  persist();
-});
-document.getElementById("otherCostInput").addEventListener("change", (e) => {
-  data.settings.otherCost = parseFloat(e.target.value) || 0;
-  persist();
-});
-document.getElementById("lowStockInput").addEventListener("change", (e) => {
-  data.settings.lowStockThreshold = parseFloat(e.target.value) || 0;
-  persist();
-});
-document.getElementById("owner1Name").addEventListener("change", (e) => {
-  const oldName = data.subOwners[0];
-  const newName = e.target.value.trim() || "Owner 1";
-  Object.values(data.costs).forEach(c => { if(c.ownerTag === oldName) c.ownerTag = newName; });
-  data.subOwners[0] = newName;
-  persist();
-});
-document.getElementById("owner2Name").addEventListener("change", (e) => {
-  const oldName = data.subOwners[1];
-  const newName = e.target.value.trim() || "Owner 2";
-  Object.values(data.costs).forEach(c => { if(c.ownerTag === oldName) c.ownerTag = newName; });
-  data.subOwners[1] = newName;
-  persist();
-});
-document.getElementById("applyFilterBtn").addEventListener("click", () => {
-  dateFrom = document.getElementById("dateFromInput").value || "";
-  dateTo = document.getElementById("dateToInput").value || "";
-  render();
-});
-document.getElementById("clearFilterBtn").addEventListener("click", () => {
-  dateFrom = ""; dateTo = "";
-  document.getElementById("dateFromInput").value = "";
-  document.getElementById("dateToInput").value = "";
-  render();
-});
-document.getElementById("resetBtn").addEventListener("click", () => {
-  if(confirm('Clear all uploaded data for "' + currentOwner + '"? Cost prices and settings will be kept.')){
-    data.orders = []; data.returns = []; data.payments = []; data.returnCosts = {}; data.returnCostsAuto = {};
-    persist();
-  }
-});
-
-document.getElementById("saveSupabaseBtn").addEventListener("click", () => {
-  const url = document.getElementById("supabaseUrlInput").value.trim();
-  const key = document.getElementById("supabaseKeyInput").value.trim();
-  if(!url || !key){ alert("Please paste both the Project URL and the anon key."); return; }
-  localStorage.removeItem(SB_DISABLED_KEY);
-  localStorage.setItem(SB_URL_KEY, url);
-  localStorage.setItem(SB_KEY_KEY, key);
-  initSupabase();
-  if(!sbClient){ setSyncStatus("Could not connect — check the URL/key", true); return; }
-  setSyncStatus("Connecting...");
-  refreshFromCloud(currentOwner);
-  pushToCloud(currentOwner, data);
-});
-document.getElementById("disconnectSupabaseBtn").addEventListener("click", () => {
-  localStorage.setItem(SB_DISABLED_KEY, "1");
-  localStorage.removeItem(SB_URL_KEY);
-  localStorage.removeItem(SB_KEY_KEY);
-  document.getElementById("supabaseUrlInput").value = "";
-  document.getElementById("supabaseKeyInput").value = "";
-  sbClient = null;
-  setSyncStatus("Local only (cloud sync off on this browser)");
-});
-document.getElementById("copySqlBtn").addEventListener("click", () => {
-  const text = document.getElementById("supabaseSql").textContent;
-  if(navigator.clipboard) navigator.clipboard.writeText(text);
-});
-
-document.getElementById("supabaseUrlInput").value = localStorage.getItem(SB_URL_KEY) || (localStorage.getItem(SB_DISABLED_KEY)==="1" ? "" : DEFAULT_SUPABASE_URL);
-document.getElementById("supabaseKeyInput").value = localStorage.getItem(SB_KEY_KEY) || (localStorage.getItem(SB_DISABLED_KEY)==="1" ? "" : DEFAULT_SUPABASE_KEY);
-initSupabase();
-setSyncStatus(sbClient ? "Connected — synced across devices" : "Local only (cloud sync off on this browser)");
+// ===== IMPORT ENGINE =====
+function normDate(v){if(!v)return'';if(typeof v==='number'){const d=XLSX.SSF.parse_date_code(v);if(d)return D(d.y+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0'));return'';}
+v=String(v).trim();if(/^\d{4}-\d{2}-\d{2}/.test(v))return D(v.slice(0,10));
+const m=v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);if(m)return`${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}-${m[3]}`;return v;}
+function ensureProduct(sku,name,price){if(!sku)return null;let p=DB.products.find(p=>p.sku===sku);
+if(!p){p={id:uid(),name:(name||sku).slice(0,60),sku,gst:18,price:+price||0,cost:0,stock:0,lowAt:5};DB.products.push(p);}
+if(price&&!p.price)p.price=+price;return p;}
+function mapStatus(raw){if(!raw)return'New';const r=String(raw).toUpperCase();
+if(r.includes('RTO'))return'RTO';if(r.includes('CUSTOMER_RETURN')||r==='CUSTOMER RETURN')return'Customer Return';
+if(r.includes('CANCEL'))return'Cancelled';if(r.includes('DELIVER'))return'Delivered';if(r.includes('REFUND'))return'Refund';
+if(r.includes('SHIP'))return'Shipped';if(r.includes('READY'))return'New';return'New';}
+function findRow(ws){const r=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
+const idx=r.findIndex(row=>row&&row.filter(c=>c&&String(c).trim()).length>=5&&!String(row[0]||'').includes('Supplier'));
+return idx<0?0:idx;}
+function parseFile(file,kind){return new Promise(res=>{const fr=new FileReader();
+fr.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array',cellDates:false});
+const ws=wb.Sheets[wb.SheetNames[0]];const start=findRow(ws);
+const rows=XLSX.utils.sheet_to_json(ws,{defval:'',range:start});
+res({file,rows});}catch(err){res({file,rows:[],error:err.message});}};
+fr.onerror=()=>res({file,rows:[],error:'Could not read file'});
+if(/\.csv$/i.test(file.name))fr.readAsText(file);else fr.readAsArrayBuffer(file);});}
+function pick(row,keys){for(const k of keys){const hit=Object.keys(row).find(h=>h.toLowerCase().includes(k.toLowerCase()));if(hit&&row[hit]!=='')return row[hit];}return'';}
+async function handleAll(files){let report=[];
+for(const f of files){const name=f.name.toLowerCase();
+let kind='orders';
+if(name.includes('intransit')||name.includes('in-transit')||name.includes('return'))kind='returns';
+else if(name.includes('completed')||name.includes('delivered'))kind='delivered';
+else if(name.includes('payment')||name.includes('settlement'))kind='payments';
+const r=await handleFiles([f],kind,true);report.push(`<div class="slot"><div class="done">✅ ${f.name} (${kind}) → ${r}</div></div>`);}
+document.getElementById('importResult').innerHTML=report.join('');save();render();toast('Import complete ✔');cur='Import Files';render();}
+async function handleFiles(files,kind,silent){
+if(!files||!files.length)return'0 new';const {file}=await parseFile(files[0],kind);
+if(!file)return'0 new';const {rows,error}=await parseFile(file,kind);
+if(error){toast('Parse error: '+error,false);return'error';}
+let added=0,skipped=0,updated=0,ads=0;
+rows.forEach(r=>{
+if(kind==='payments'){const sub=String(pick(r,['Sub Order No','Suborder'])||'').trim();
+const detail=String(pick(r,['Revenue and deductions','Revenue'])||'');
+const fin=parseFloat(String(pick(r,['Final Settlement','Final settlement amount'])||'').replace(/[^\d.\-]/g,''))||0;
+const adAmt=parseFloat(String(pick(r,['Ads Cost','Ads cost','Ads'])||'').replace(/[^\d.\-]/g,''))||0;
+if(adAmt>0){const pd=D(String(pick(r,['Payment Date'])||'')||'');DB.expenses.push({id:uid(),date:pd||'—',type:'Ads',desc:'Imported ads · '+(sub||file.name.slice(0,20)),amt:adAmt});ads++;}
+if(sub){const o=DB.orders.find(o=>o.id===sub);
+if(o){o.payDate=D(String(pick(r,['Payment Date'])||''))||o.payDate;o.txn=String(pick(r,['Transaction ID'])||'')||o.txn;o.net=fin;updated++;}
+else if(fin>0){const sku=String(pick(r,['Supplier SKU','SKU'])||'');const p=ensureProduct(sku,pick(r,['Product Name','Product']),pick(r,['Listing Price']));
+DB.orders.push({id:sub,date:D(String(pick(r,['Order Date'])||'').slice(0,10))||'—',prod:p?p.id:'?',qty:+pick(r,['Quantity'])||1,sale:parseFloat(String(pick(r,['Total Sale Amount'])||'').match(/[\d.]+/)?.[0])||0,net:fin,status:mapStatus(pick(r,['Live Order Status'])),src:'Payment Import',txn:pick(r,['Transaction ID'])||'',payDate:D(String(pick(r,['Payment Date'])||''))||'',reason:''});added++;}}
+return;}
+const sub=String(pick(r,['Suborder Number','Sub Order No','Suborder No'])||'').trim();
+if(!sub||sub==='NA'){skipped++;return;}
+const sku=String(pick(r,['Supplier SKU','SKU'])||'').trim();
+if(!sku){skipped++;return;}
+const p=ensureProduct(sku,pick(r,['Product Name','Product']),pick(r,['Supplier Listed Price','Listing Price','Supplier Discounted Price']));
+const tRet=String(pick(r,['Type of Return','Type'])||'');
+let st,statusChange=false;
+if(kind==='orders'){st=mapStatus(pick(r,['Reason for Credit Entry','Reason','Status']));}
+else{st=tRet.includes('RTO')?'RTO':'Customer Return';}
+const existing=DB.orders.find(o=>o.id===sub);
+if(existing){if(['RTO','Customer Return'].includes(st)&&existing.status!==st){existing.status=st;existing.reason=pick(r,['Return Reason','Detailed Return Reason'])||existing.reason||'';existing.payDate=D(String(pick(r,['Return Created Date'])||''))||existing.payDate;updated++;}
+else{skipped++;}return;}
+const od=D(String(pick(r,['Order Date','Dispatch Date'])||'').slice(0,10));
+DB.orders.push({id:sub,date:od||'—',prod:p?p.id:'?',qty:+pick(r,['Quantity','Qty'])||1,
+sale:parseFloat(String(pick(r,['Supplier Listed Price','Supplier Discounted Price','Listing Price'])||'').replace(/[^\d.]/g,''))||0,
+net:null,status:st,src:'Import · '+kind,txn:'',payDate:D(String(pick(r,['Return Created Date'])||''))||'',reason:tRet.includes('RTO')?'forward_RTO':(pick(r,['Return Reason'])||''),state:String(pick(r,['Customer State','State'])||'')});added++;});
+const msg=`✅ ${file.name} (${kind}): <b>${added} new</b> orders · ${updated} status/payment updates · ${skipped} duplicates/empty skipped${ads?' · '+ads+' ad records':''}`;
+if(silent)return msg;
+document.getElementById('importResult').innerHTML=`<div class="okmsg">${msg}</div>`;
+save();render();toast('Imported: '+added+' new, '+updated+' updated');return msg;}
+function setupDragDrop(){const ov=document.getElementById('dragOverlay');
+['dragover','dragenter'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();ov.style.display='flex';}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{if(ev==='dragleave'&&e.relatedTarget)return;e.preventDefault();ov.style.display='none';}));
+document.addEventListener('drop',e=>{if(e.dataTransfer.files.length)handleAll(e.dataTransfer.files);});}
+function renderOrders(){const q=(document.getElementById('fq').value||'').toLowerCase(),fs=document.getElementById('fs').value,fp=document.getElementById('fp').value;
+const rows=DB.orders.filter(o=>(!fs||o.status===fs)&&(!fp||o.prod===fp)&&(!q||o.id.toLowerCase().includes(q)));
+document.getElementById('ot').innerHTML=`<table><tr><th>Order ID</th><th>Date</th><th>Product</th><th>State</th><th>₹ Sale</th><th>Status</th><th>Source</th><th>Payment</th><th></th></tr>
+${rows.map(o=>`<tr><td>${o.id}</td><td>${o.date}</td><td>${pname(o.prod)}</td><td>${o.state||'—'}</td><td>${o.sale?fmt(o.sale):'—'}</td><td><span class="badge ${BC[o.status]||''}" onclick="chgStatus('${o.id}')" style="cursor:pointer">${o.status}</span></td><td>${o.src}</td><td>${o.payDate||'—'}</td><td><button class="sm" onclick="delRec('orders','${o.id}')">✕</button></td></tr>`).join('')}</table>${rows.length?'':'<div class="empty">No matching orders.</div>'}`;}
+function chgStatus(id){const o=DB.orders.find(x=>x.id===id);const ns=prompt('New status:\n'+STATUS.join(' | '),o.status);if(!ns||!STATUS.includes(ns))return;
+const old=o.status;o.status=ns;const p=DB.products.find(p=>p.id===o.prod);
+if(old!=='Delivered'&&ns==='Delivered'&&p&&p.stock>0)p.stock=Math.max(0,p.stock-o.qty);
+if(old==='Delivered'&&['RTO','Customer Return'].includes(ns)&&p)p.stock+=o.qty;
+save();render();toast('Status → '+ns);}
+function markRestocked(id){const o=DB.orders.find(x=>x.id===id);const p=DB.products.find(p=>p.id===o.prod);if(p){p.stock+=o.qty;save();toast('Stock restored: '+pname(o.prod));}}
+function setStock(id,v){DB.products.find(p=>p.id===id).stock=+v||0;save();}
+function orderForm(){document.getElementById('view').insertAdjacentHTML('beforeend',`<div class="panel"><b>Add Order</b><div class="formrow">
+<div><label>Order ID</label><input id="o_id"></div><div><label>Date (DD-MM-YYYY)</label><input id="o_date"></div>
+<div><label>Product</label><select id="o_prod">${DB.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
+<div><label>Qty</label><input id="o_qty" type="number" value="1" style="width:70px"></div><div><label>Sale ₹</label><input id="o_sale" type="number"></div>
+<div><label>Status</label><select id="o_status">${STATUS.map(s=>`<option>${s}</option>`).join('')}</select></div></div>
+<button class="act" onclick="saveOrder()">Save Order</button></div>`);window.scrollTo(0,document.body.scrollHeight);}
+function saveOrder(){const id=o_id.value.trim();if(!id){toast('Order ID required',false);return;}
+if(DB.orders.some(o=>o.id===id)){toast('Duplicate Order ID rejected!',false);return;}
+const st=o_status.value;DB.orders.push({id,date:o_date.value||'—',prod:o_prod.value,qty:+o_qty.value||1,sale:+o_sale.value||0,status:st,src:'Manual',reason:'',payDate:''});
+if(st==='Delivered'){const p=DB.products.find(p=>p.id===o_prod.value);if(p&&p.stock>0)p.stock=Math.max(0,p.stock-(+o_qty.value||1));}
+save();render();toast('Order added ✔');}
+function prodForm(){document.getElementById('view').insertAdjacentHTML('beforeend',`<div class="panel"><b>Add Product</b><div class="formrow">
+<div><label>Name</label><input id="p_name"></div><div><label>SKU</label><input id="p_sku"></div><div><label>Price ₹</label><input id="p_price" type="number"></div>
+<div><label>Cost ₹</label><input id="p_cost" type="number"></div><div><label>Stock</label><input id="p_stock" type="number" style="width:80px"></div></div>
+<button class="act" onclick="saveProd()">Save</button></div>`);window.scrollTo(0,document.body.scrollHeight);}
+function saveProd(){if(!p_name.value.trim()){toast('Name required',false);return;}
+DB.products.push({id:uid(),name:p_name.value.trim(),sku:p_sku.value||'-',gst:18,price:+p_price.value||0,cost:+p_cost.value||0,stock:+p_stock.value||0,lowAt:5});save();render();toast('Product added ✔');}
+function prodEdit(id){const p=DB.products.find(x=>x.id===id);const v=prompt('Update cost ₹ and low-stock alert (e.g. "280, 5"):',p.cost+', '+p.lowAt);if(!v)return;const[c,s]=v.split(',');if(c)p.cost=+c.trim()||0;if(s)p.lowAt=+s.trim()||5;save();render();}
+function expForm(){document.getElementById('view').insertAdjacentHTML('beforeend',`<div class="panel"><b>Add Expense</b><div class="formrow">
+<div><label>Date</label><input id="e_date"></div><div><label>Type</label><select id="e_type"><option>Ads</option><option>Packaging</option><option>Other</option></select></div>
+<div><label>Description</label><input id="e_desc"></div><div><label>Amount ₹</label><input id="e_amt" type="number"></div></div>
+<button class="act" onclick="saveExp()">Save</button></div>`);window.scrollTo(0,document.body.scrollHeight);}
+function saveExp(){DB.expenses.push({id:uid(),date:e_date.value||'—',type:e_type.value,desc:e_desc.value||'-',amt:+e_amt.value||0});save();render();toast('Saved ✔');}
+function gstForm(){document.getElementById('view').insertAdjacentHTML('beforeend',`<div class="panel"><b>Add GST Month</b><div class="formrow">
+<div><label>Month</label><input id="g_m"></div><div><label>Output GST ₹</label><input id="g_out" type="number"></div><div><label>ITC ₹</label><input id="g_itc" type="number"></div><div><label>Paid ₹</label><input id="g_paid" type="number"></div><div><label>Status</label><select id="g_st"><option>Not filed</option><option>Filed</option></select></div></div>
+<button class="act" onclick="saveGst()">Save</button></div>`);window.scrollTo(0,document.body.scrollHeight);}
+function saveGst(){DB.gst.push({m:g_m.value||'—',output:+g_out.value||0,itc:+g_itc.value||0,paid:+g_paid.value||0,status:g_st.value});save();render();toast('Saved ✔');}
+function delRec(coll,key){if(!confirm('Delete this record?'))return;DB[coll]=DB[coll].filter(x=>x.id!==key);save();render();}
+function backup(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(DB,null,2)],{type:'application/json'}));a.download='msm_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('Backup downloaded ✔');}
+function restore(){const i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=()=>{const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.orders)throw 0;DB=d;save();render();toast('Restored ✔');}catch(e){toast('Invalid backup file',false);}};r.readAsText(i.files[0]);};i.click();}
 render();
-if(sbClient) fetchOwnersFromCloud();
-else setSyncStatus("Local only");
 </script>
 </body>
 </html>
