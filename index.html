@@ -43,10 +43,26 @@ input,select{padding:8px;border:1px solid #d7dae6;border-radius:8px;font-size:14
 <aside id="nav"></aside>
 <main id="view"></main>
 <script>
-/* ============ STATE ============ */
+/* ============ STATE + NORMALIZATION (fixes old saved data) ============ */
 const DEF_SETTINGS={gstRate:18,returnLoss:170,adsCost:0,otherFlat:0,rtoLoss:0,lowStock:5,owner1:"Owner 1",owner2:"Owner 2",shopName:"My Store",supabaseUrl:"",supabaseKey:""};
-let S=JSON.parse(localStorage.getItem("meeshoPortal")||"null")||{orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},dashMonth:"",settings:{...DEF_SETTINGS}};
-S.settings={...DEF_SETTINGS,...(S.settings||{})};S.dashMonth=S.dashMonth||"";
+function blankState(){return {orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},dashMonth:"",settings:{...DEF_SETTINGS}}}
+function normalize(x){
+  const b=blankState();const s=x&&typeof x==="object"?x:{};
+  const safeArr=v=>Array.isArray(v)?v.filter(r=>r&&typeof r==="object"):[];
+  const safeObj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  return {
+    orders:safeArr(s.orders).map(o=>({subOrder:String(o.subOrder||""),order:String(o.order||""),sku:String(o.sku||""),qty:Math.max(1,num(o.qty)||1),price:num(o.price),status:String(o.status||"New"),date:o.date||"",loss:o.loss!=null?num(o.loss):undefined})),
+    otherCosts:safeArr(s.otherCosts),
+    stock:safeObj(s.stock),skuCost:safeObj(s.skuCost),skuPack:safeObj(s.skuPack),skuOwner:safeObj(s.skuOwner),
+    settlements:safeArr(s.settlements).map(t=>({subOrder:String(t.subOrder||""),amount:num(t.amount),scheduled:!!t.scheduled})),
+    payments:safeObj(s.payments),
+    dashMonth:typeof s.dashMonth==="string"?s.dashMonth:"",
+    settings:{...DEF_SETTINGS,...safeObj(s.settings)}
+  };
+}
+let S;
+try{S=normalize(JSON.parse(localStorage.getItem("meeshoPortal")||"null"));}catch(e){S=blankState();}
+save();
 function save(){localStorage.setItem("meeshoPortal",JSON.stringify(S))}
 function fmt(n){return "₹"+(Math.round((n||0)*100)/100).toLocaleString("en-IN")}
 function dmy(d){if(!d)return "—";const x=new Date(d);return isNaN(x)?"—":String(x.getDate()).padStart(2,"0")+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+x.getFullYear()}
@@ -57,12 +73,12 @@ function num(x){const n=parseFloat(String(x==null?"":x).replace(/[₹,\s]/g,""))
 /* ============ NAV ============ */
 const TABS=["Dashboard","Upload data","All orders","Cost & owners","Other cost","Stock","Returns","Received payment","Pending payment","Settings"];
 let cur="Dashboard";
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
 function renderNav(){
   document.getElementById("nav").innerHTML="<h1>📦 "+esc(S.settings.shopName||"Meesho Portal")+"</h1>"+
     TABS.map(t=>`<button data-tab="${t}" class="${t===cur?'active':''}">${t}</button>`).join("");
 }
 document.getElementById("nav").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(!b)return;cur=b.dataset.tab;renderNav();render();});
-function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
 function render(){
   const v=document.getElementById("view");
   const fns={"Dashboard":vDash,"Upload data":vUpload,"All orders":vOrders,"Cost & owners":vCost,"Other cost":vOther,"Stock":vStock,"Returns":vReturns,"Received payment":vReceived,"Pending payment":vPending,"Settings":vSettings};
@@ -138,38 +154,40 @@ function extractPayments(rows,sheet){
 }
 function extractSum(rows,key){const hr=findHeaderRow(rows);let sum=0;for(let i=hr+1;i<rows.length;i++){const r=rows[i]||[];for(const c of r){const v=num(c);if(v)sum+=v}}if(sum)S.payments[key]=(S.payments[key]||0)+sum}
 
-/* ============ CALC ============ */
-function returnLossFor(o){const s=S.settlements.find(x=>x.subOrder===o.subOrder);if(s&&s.amount<0)return s.amount;return o.loss!=null?o.loss:S.settings.returnLoss}
+/* ============ CALC (fully guarded) ============ */
+function skuVal(obj,sku){return (obj&&typeof obj==="object")?num(obj[sku]):0}
+function returnLossFor(o){const s=(S.settlements||[]).find(x=>x.subOrder===o.subOrder);if(s&&s.amount<0)return s.amount;return o.loss!=null?o.loss:S.settings.returnLoss}
 function calc(selMonth){
-  const st=S.settings;
-  let o=S.orders;
+  const st=S.settings||DEF_SETTINGS;
+  let o=S.orders||[];
   if(selMonth)o=o.filter(x=>monthKey(x.date)===selMonth);
   const delivered=o.filter(x=>x.status==="Delivered");
-  const netSale=delivered.reduce((a,x)=>a+x.price*x.qty,0);
-  const productCost=delivered.reduce((a,x)=>a+(S.skuCost[x.sku]||0)*x.qty,0);
-  const packCost=delivered.reduce((a,x)=>a+(S.skuPack[x.sku]||0)*x.qty,0);
-  const gst=netSale*st.gstRate/118;
-  const other=st.otherFlat+(selMonth?S.otherCosts.filter(c=>monthKey(c.date)===selMonth).reduce((a,c)=>a+c.amount,0):S.otherCosts.reduce((a,c)=>a+c.amount,0));
-  const ads=st.adsCost;
+  const netSale=delivered.reduce((a,x)=>a+num(x.price)*num(x.qty),0);
+  const productCost=delivered.reduce((a,x)=>a+skuVal(S.skuCost,x.sku)*num(x.qty),0);
+  const packCost=delivered.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
+  const gst=netSale*num(st.gstRate)/118;
+  const oc=(selMonth?(S.otherCosts||[]).filter(c=>monthKey(c.date)===selMonth):(S.otherCosts||[])).reduce((a,c)=>a+num(c.amount),0);
+  const other=num(st.otherFlat)+oc;
+  const ads=num(st.adsCost);
   const rto=o.filter(x=>x.status==="RTO");
   const returns=o.filter(x=>x.status==="Customer Return");
-  const rtoLoss=rto.length*st.rtoLoss;
+  const rtoLoss=rto.length*num(st.rtoLoss);
   const retLoss=returns.reduce((a,x)=>a+returnLossFor(x),0);
   const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
-  return {netSale:netSale,productCost:productCost,packCost:packCost,gst:gst,other:other,ads:ads,rtoLoss:rtoLoss,retLoss:retLoss,netProfit:netProfit,delivered:delivered,rto:rto,returns:returns,orders:o};
+  return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o};
 }
 
-/* ============ SAFE SETTERS (used by data-attributes) ============ */
-function setCost(sku,field,val){S[field]=S[field]||{};S[field][sku]=num(val);save();}
-function setOwner(sku,val){S.skuOwner[sku]=val;save();}
-function setStock(sku,val){S.stock[sku]=num(val);save();}
-function setLoss(sub,val){const o=S.orders.find(x=>x.subOrder===sub);if(o){o.loss=num(val);save();}}
+/* ============ SAFE SETTERS ============ */
+function setCost(sku,field,val){if(!S[field]||typeof S[field]!=="object")S[field]={};S[field][sku]=num(val);save();}
+function setOwner(sku,val){if(!S.skuOwner||typeof S.skuOwner!=="object")S.skuOwner={};S.skuOwner[sku]=val;save();}
+function setStock(sku,val){if(!S.stock||typeof S.stock!=="object")S.stock={};S.stock[sku]=num(val);save();}
+function setLoss(sub,val){const o=(S.orders||[]).find(x=>x.subOrder===sub);if(o){o.loss=num(val);save();}}
 function setMonth(val){S.dashMonth=(val==="ALL"?"":val);save();render();}
 
 /* ============ VIEWS ============ */
 function kpi(l,v){return '<div class="kpi"><b>'+v+'</b><span>'+l+'</span></div>'}
 function monthPicker(){
-  const ms=[...new Set(S.orders.map(o=>monthKey(o.date)).filter(Boolean))].sort().reverse();
+  const ms=[...new Set((S.orders||[]).map(o=>monthKey(o.date)).filter(Boolean))].sort().reverse();
   const curM=S.dashMonth&&ms.includes(S.dashMonth)?S.dashMonth:"ALL";
   let opts='<option value="ALL"'+(curM==="ALL"?" selected":"")+'>All months</option>';
   ms.forEach(k=>{opts+='<option value="'+k+'"'+(curM===k?" selected":"")+'>'+monthLabel(k)+'</option>'});
@@ -177,8 +195,8 @@ function monthPicker(){
 }
 function vDash(){
   const sel=S.dashMonth||"",c=calc(sel),st=S.settings;
-  const paid=S.settlements.filter(s=>s.scheduled).reduce((a,s)=>a+s.amount,0);
-  const pend=c.delivered.reduce((a,x)=>{const s=S.settlements.find(z=>z.subOrder===x.subOrder);return a+((s&&s.scheduled)?0:(s?s.amount:x.price))},0);
+  const paid=(S.settlements||[]).filter(s=>s.scheduled).reduce((a,s)=>a+num(s.amount),0);
+  const pend=c.delivered.reduce((a,x)=>{const s=(S.settlements||[]).find(z=>z.subOrder===x.subOrder);return a+((s&&s.scheduled)?0:(s?num(s.amount):num(x.price)*num(x.qty)))},0);
   return '<div class="card"><h2>'+esc(st.shopName||"My Store")+(sel?" — "+monthLabel(sel):"")+'</h2>'+monthPicker()+
   '<div class="kpis">'+
   kpi("Net Profit",'<span class="'+(c.netProfit>=0?'pos':'neg')+'">'+fmt(c.netProfit)+'</span>')+
@@ -209,12 +227,12 @@ function drawCharts(){
   const sel=S.dashMonth||"";
   const c1=document.getElementById("ch1"),c2=document.getElementById("ch2");
   if(c1){
-    const byDate={};S.orders.filter(o=>o.status==="Delivered"&&(!sel||monthKey(o.date)===sel)).forEach(o=>{const k=dmy(o.date);byDate[k]=(byDate[k]||0)+o.price*o.qty});
+    const byDate={};(S.orders||[]).filter(o=>o.status==="Delivered"&&(!sel||monthKey(o.date)===sel)).forEach(o=>{const k=dmy(o.date);byDate[k]=(byDate[k]||0)+num(o.price)*num(o.qty)});
     const ks=Object.keys(byDate).slice(-14);
     try{ch1Ref=new Chart(c1,{type:"line",data:{labels:ks,datasets:[{label:"Delivered sale ₹",data:ks.map(k=>byDate[k]),borderColor:"#7c3aed",fill:false}]},options:{plugins:{legend:{display:true}}}});}catch(e){}
   }
   if(c2){
-    const cnt={};S.orders.filter(o=>!sel||monthKey(o.date)===sel).forEach(o=>{cnt[o.status]=(cnt[o.status]||0)+1});
+    const cnt={};(S.orders||[]).filter(o=>!sel||monthKey(o.date)===sel).forEach(o=>{cnt[o.status]=(cnt[o.status]||0)+1});
     try{ch2Ref=new Chart(c2,{type:"doughnut",data:{labels:Object.keys(cnt),datasets:[{data:Object.values(cnt),backgroundColor:["#7c3aed","#3b82f6","#059669","#dc2626","#d97706","#8b5cf6","#64748b"]}]},options:{plugins:{legend:{position:"bottom"}}}});}catch(e){}
   }
 }
@@ -223,16 +241,16 @@ function vUpload(){return '<div class="card"><h2>Upload your Meesho exports</h2>
  '<div class="drop" id="dz">📄 Drag & drop your Meesho files here<br><small style="color:var(--mut)">— or click to browse —</small><input type="file" id="fp" multiple accept=".csv,.xlsx,.xls" style="display:none"></div>'+
  '<div id="impMsg" class="msg"></div>'+
  '<button class="btn gray" style="margin-top:12px" id="resetBtn">Reset this business\u2019s data</button></div>'}
-function vOrders(){const rows=S.orders.map(o=>"<tr><td>"+dmy(o.date)+"</td><td>"+esc(o.subOrder)+"</td><td>"+esc(o.sku)+"</td><td>"+o.qty+"</td><td>"+fmt(o.price*o.qty)+"</td><td>"+o.status+"</td></tr>").join("");
-  return '<div class="card"><h2>All orders ('+S.orders.length+')</h2>'+(S.orders.length?'<table><tr><th>Date</th><th>Sub Order</th><th>SKU</th><th>Qty</th><th>Sale</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No orders yet — upload in the Upload data tab.</p>")+'</div>'}
+function vOrders(){const rows=(S.orders||[]).map(o=>"<tr><td>"+dmy(o.date)+"</td><td>"+esc(o.subOrder)+"</td><td>"+esc(o.sku)+"</td><td>"+o.qty+"</td><td>"+fmt(num(o.price)*num(o.qty))+"</td><td>"+esc(o.status)+"</td></tr>").join("");
+  return '<div class="card"><h2>All orders ('+(S.orders||[]).length+')</h2>'+(S.orders.length?'<table><tr><th>Date</th><th>Sub Order</th><th>SKU</th><th>Qty</th><th>Sale</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No orders yet — upload in the Upload data tab.</p>")+'</div>'}
 function vCost(){
-  const skus=[...new Set(S.orders.map(o=>o.sku).filter(Boolean))];
+  const skus=[...new Set((S.orders||[]).map(o=>o.sku).filter(Boolean))];
   let rows="";
   skus.forEach(s=>{
     rows+='<tr><td>'+esc(s)+'</td>'+
-    '<td><input data-sku="'+esc(s)+'" data-field="skuCost" value="'+(S.skuCost[s]!=null?S.skuCost[s]:"")+'"></td>'+
-    '<td><input data-sku="'+esc(s)+'" data-field="skuPack" value="'+(S.skuPack[s]!=null?S.skuPack[s]:"")+'"></td>'+
-    '<td><select data-sku="'+esc(s)+'" class="ownerSel"><option value="o1"'+(S.skuOwner[s]!=="o2"?" selected":"")+'>'+esc(S.settings.owner1)+'</option><option value="o2"'+(S.skuOwner[s]==="o2"?" selected":"")+'>'+esc(S.settings.owner2)+'</option></select></td></tr>';
+    '<td><input data-sku="'+esc(s)+'" data-field="skuCost" value="'+((S.skuCost&&S.skuCost[s]!=null)?S.skuCost[s]:"")+'"></td>'+
+    '<td><input data-sku="'+esc(s)+'" data-field="skuPack" value="'+((S.skuPack&&S.skuPack[s]!=null)?S.skuPack[s]:"")+'"></td>'+
+    '<td><select data-sku="'+esc(s)+'" class="ownerSel"><option value="o1"'+((!S.skuOwner||S.skuOwner[s]!=="o2")?" selected":"")+'>'+esc(S.settings.owner1)+'</option><option value="o2"'+((S.skuOwner&&S.skuOwner[s]==="o2")?" selected":"")+'>'+esc(S.settings.owner2)+'</option></select></td></tr>';
   });
   return '<div class="card"><h2>Cost & owners</h2>'+
   '<div class="row"><div><label>Owner 1 name</label><br><input id="o1" value="'+esc(S.settings.owner1)+'"></div>'+
@@ -244,23 +262,23 @@ function vCost(){
 }
 function vOther(){return '<div class="card"><h2>Other cost ledger</h2>'+
  '<div class="row"><div><label>Date</label><br><input type="date" id="ocd"></div><div><label>Amount ₹</label><br><input type="number" id="oca"></div><div><label>Note</label><br><input id="ocn"></div><button class="btn" id="addOc">Add</button></div>'+
- '<h3>'+S.otherCosts.length+' entries — '+fmt(S.otherCosts.reduce((a,c)=>a+c.amount,0))+'</h3>'+
- (S.otherCosts.length?'<table><tr><th>Date</th><th>Amount</th><th>Note</th></tr>'+S.otherCosts.map(c=>"<tr><td>"+dmy(c.date)+"</td><td>"+fmt(c.amount)+"</td><td>"+esc(c.note||"")+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>No entries yet.</p>")+'</div>'}
+ '<h3>'+(S.otherCosts||[]).length+' entries — '+fmt((S.otherCosts||[]).reduce((a,c)=>a+num(c.amount),0))+'</h3>'+
+ (S.otherCosts&&S.otherCosts.length?'<table><tr><th>Date</th><th>Amount</th><th>Note</th></tr>'+S.otherCosts.map(c=>"<tr><td>"+dmy(c.date)+"</td><td>"+fmt(num(c.amount))+"</td><td>"+esc(c.note||"")+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>No entries yet.</p>")+'</div>'}
 function vStock(){
-  const skus=[...new Set(S.orders.map(o=>o.sku).filter(Boolean))];
+  const skus=[...new Set((S.orders||[]).map(o=>o.sku).filter(Boolean))];
   let rows="";
   skus.forEach(s=>{
-    const sold=S.orders.filter(o=>o.sku===s&&o.status==="Delivered").reduce((a,o)=>a+o.qty,0);
-    const low=(S.stock[s]||0)<=S.settings.lowStock;
-    rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+(S.stock[s]!=null?S.stock[s]:"")+'"></td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
+    const sold=(S.orders||[]).filter(o=>o.sku===s&&o.status==="Delivered").reduce((a,o)=>a+num(o.qty),0);
+    const low=num(S.stock&&S.stock[s])<=num(S.settings.lowStock);
+    rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+((S.stock&&S.stock[s]!=null)?S.stock[s]:"")+'"></td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
   });
   return '<div class="card"><h2>Stock on hand</h2>'+(skus.length?'<table><tr><th>SKU</th><th>Current stock</th><th>Sold (delivered)</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No SKUs yet.</p>")+'</div>';
 }
 function vReturns(){
-  const r=S.orders.filter(o=>o.status==="Customer Return");
+  const r=(S.orders||[]).filter(o=>o.status==="Customer Return");
   let rows="";
   r.forEach(o=>{
-    const s=S.settlements.find(x=>x.subOrder===o.subOrder);
+    const s=(S.settlements||[]).find(x=>x.subOrder===o.subOrder);
     rows+='<tr><td>'+esc(o.subOrder)+'</td><td>'+esc(o.sku)+'</td><td>'+(s&&s.amount<0?'<span class="neg">'+fmt(s.amount)+'</span>':"—")+'</td>'+
     '<td><input data-sub="'+esc(o.subOrder)+'" class="lossIn" value="'+returnLossFor(o)+'"></td></tr>';
   });
@@ -269,16 +287,16 @@ function vReturns(){
   (r.length?'<table><tr><th>Sub Order</th><th>SKU</th><th>Actual from payment file</th><th>Loss applied ₹</th></tr>'+rows+
   '<tr><td colspan="3"><b>Total return loss (deducted from profit)</b></td><td><b class="neg">'+fmt(r.reduce((a,o)=>a+returnLossFor(o),0))+'</b></td></tr></table>':"<p style='color:var(--mut)'>No customer returns uploaded yet.</p>")+'</div>';
 }
-function vReceived(){const paid=S.settlements.filter(s=>s.scheduled);
-  return '<div class="card"><h2>Received payment ('+paid.length+') — '+fmt(paid.reduce((a,s)=>a+s.amount,0))+'</h2>'+
+function vReceived(){const paid=(S.settlements||[]).filter(s=>s.scheduled);
+  return '<div class="card"><h2>Received payment ('+paid.length+') — '+fmt(paid.reduce((a,s)=>a+num(s.amount),0))+'</h2>'+
   (paid.length?'<table><tr><th>Sub Order</th><th>Settlement ₹</th></tr>'+paid.map(s=>"<tr><td>"+esc(s.subOrder)+"</td><td class='"+(s.amount<0?'neg':'')+"'>"+fmt(s.amount)+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>No settlements yet — upload the payment file.</p>")+'</div>'}
-function vPending(){const pd=S.orders.filter(o=>o.status==="Delivered"&&!S.settlements.find(s=>s.subOrder===o.subOrder&&s.scheduled));
+function vPending(){const pd=(S.orders||[]).filter(o=>o.status==="Delivered"&&!(S.settlements||[]).find(s=>s.subOrder===o.subOrder&&s.scheduled));
   return '<div class="card"><h2>Pending payment ('+pd.length+')</h2>'+
-  (pd.length?'<table><tr><th>Sub Order</th><th>Est. ₹</th></tr>'+pd.map(o=>"<tr><td>"+esc(o.subOrder)+"</td><td>"+fmt(o.price*o.qty)+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>Nothing pending — all delivered orders have settlements.</p>")+'</div>'}
+  (pd.length?'<table><tr><th>Sub Order</th><th>Est. ₹</th></tr>'+pd.map(o=>"<tr><td>"+esc(o.subOrder)+"</td><td>"+fmt(num(o.price)*num(o.qty))+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>Nothing pending — all delivered orders have settlements.</p>")+'</div>'}
 function vSettings(){const s=S.settings;
   return '<div class="card"><h2>Calculation settings</h2><div class="row">'+
   '<div><label>Shop name</label><br><input id="sn" value="'+esc(s.shopName||"")+'"><br><small style="color:var(--mut)">Editable — shows on dashboard & sidebar</small></div>'+
-  [["gstRate","GST rate %"],["returnLoss","Return default loss ₹"],["adsCost","Ads cost ₹"],["otherFlat","Other cost flat ₹"],["rtoLoss","RTO loss ₹"],["lowStock","Low stock alert"]].map(p=>'<div><label>'+p[1]+'</label><br><input type="number" value="'+s[p[0]]+'" data-set="'+p[0]+'"></div>').join("")+
+  [["gstRate","GST rate %"],["returnLoss","Return default loss ₹"],["adsCost","Ads cost ₹"],["otherFlat","Other cost flat ₹"],["rtoLoss","RTO loss ₹"],["lowStock","Low stock alert"]].map(p=>'<div><label>'+p[1]+'</label><br><input type="number" value="'+num(s[p[0]])+'" data-set="'+p[0]+'"></div>').join("")+
   '<button class="btn" id="saveShop">Save shop name</button></div>'+
   '<h3>Backup & restore</h3><button class="btn" id="dlBtn">⬇ Download backup (JSON)</button>'+
   '<label class="btn gray" style="display:inline-block">⬆ Restore backup<input type="file" accept=".json" id="rsFile" style="display:none"></label>'+
@@ -287,7 +305,7 @@ function vSettings(){const s=S.settings;
   '<div class="row"><input id="su" placeholder="Supabase URL" value="'+esc(s.supabaseUrl)+'" style="flex:1;min-width:200px"><input id="sk" placeholder="Anon key" value="'+esc(s.supabaseKey)+'" style="flex:1;min-width:200px"><button class="btn" id="saveCloud">Save</button></div></div>';
 }
 
-/* ============ EVENT WIRING (delegated — no fragile inline JS) ============ */
+/* ============ EVENT WIRING ============ */
 document.addEventListener("input",e=>{
   const t=e.target;
   if(t.dataset&&t.dataset.sku&&(t.dataset.field==="skuCost"||t.dataset.field==="skuPack"))setCost(t.dataset.sku,t.dataset.field,t.value);
@@ -303,7 +321,7 @@ document.addEventListener("change",e=>{
 });
 document.addEventListener("click",e=>{
   if(e.target.closest("#dz")&&!e.target.closest("input")){const fp=document.getElementById("fp");if(fp)fp.click();}
-  if(e.target.closest("#resetBtn")){if(confirm("Reset ALL data for this business?")){S={orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},dashMonth:"",settings:{...DEF_SETTINGS}};save();renderNav();render();}}
+  if(e.target.closest("#resetBtn")){if(confirm("Reset ALL data for this business?")){S=blankState();save();renderNav();render();}}
   if(e.target.closest("#saveOwners")){S.settings.owner1=document.getElementById("o1").value;S.settings.owner2=document.getElementById("o2").value;save();render();}
   if(e.target.closest("#addOc")){S.otherCosts.push({date:document.getElementById("ocd").value,amount:num(document.getElementById("oca").value),note:document.getElementById("ocn").value});save();render();}
   if(e.target.closest("#saveShop")){S.settings.shopName=document.getElementById("sn").value;save();renderNav();render();}
@@ -314,7 +332,7 @@ document.addEventListener("dragover",e=>{if(cur!=="Upload data")return;e.prevent
 document.addEventListener("dragleave",()=>{const dz=document.getElementById("dz");if(dz)dz.classList.remove("over")});
 document.addEventListener("drop",e=>{if(cur!=="Upload data")return;e.preventDefault();const dz=document.getElementById("dz");if(dz)dz.classList.remove("over");if(e.dataTransfer.files.length)handleFiles([...e.dataTransfer.files])});
 function downloadBackup(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:"application/json"}));a.download="meesho-backup-"+new Date().toISOString().slice(0,10)+".json";a.click()}
-function restore(f){const r=new FileReader();r.onload=()=>{try{S=JSON.parse(r.result);S.settings={...DEF_SETTINGS,...(S.settings||{})};save();renderNav();render();alert("Backup restored")}catch(e){alert("Invalid backup file")}};r.readAsText(f)}
+function restore(f){const r=new FileReader();r.onload=()=>{try{S=normalize(JSON.parse(r.result));save();renderNav();render();alert("Backup restored")}catch(e){alert("Invalid backup file")}};r.readAsText(f)}
 
 renderNav();render();
 </script>
