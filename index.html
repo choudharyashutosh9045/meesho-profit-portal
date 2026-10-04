@@ -172,10 +172,25 @@ function calc(selMonth){
   const rto=o.filter(x=>x.status==="RTO");
   const returns=o.filter(x=>x.status==="Customer Return");
   const rtoLoss=rto.length*num(st.rtoLoss);
-  /* FIX: Math.abs so negative payment-file deductions are treated as losses, not added back */
   const retLoss=returns.reduce((a,x)=>a+Math.abs(returnLossFor(x)),0);
   const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
-  return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o};
+  /* owner-wise split */
+  const owners={};
+  delivered.forEach(x=>{
+    const own=(S.skuOwner&&S.skuOwner[x.sku]==="o2")?"o2":"o1";
+    if(!owners[own])owners[own]={name:own==="o1"?st.owner1:st.owner2,sale:0,productCost:0,packCost:0,orders:0};
+    const w=owners[own];
+    w.sale+=num(x.price)*num(x.qty);
+    w.productCost+=skuVal(S.skuCost,x.sku)*num(x.qty);
+    w.packCost+=skuVal(S.skuPack,x.sku)*num(x.qty);
+    w.orders++;
+  });
+  Object.keys(owners).forEach(k=>{
+    const w=owners[k];
+    w.profit=w.sale-w.productCost-w.packCost;
+    w.pct=Math.round((w.sale/(netSale||1))*100);
+  });
+  return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o,ownerStats:owners};
 }
 
 /* ============ SAFE SETTERS ============ */
@@ -218,15 +233,24 @@ function vDash(){
   "<tr><td>Customer Return loss</td><td>−"+fmt(c.retLoss)+"</td><td>"+c.returns.length+" orders (actual from payment file where available)</td></tr>"+
   "<tr><td><b>Net Profit</b></td><td><b class='"+(c.netProfit>=0?'pos':'neg')+"'>"+fmt(c.netProfit)+"</b></td><td>sale − all costs − GST − losses</td></tr>"+
   '</table></div>'+
-  '<div class="card"><h3>Sales & orders trend</h3><canvas id="ch1" height="140"></canvas><h3 style="margin-top:16px">Order outcomes</h3><canvas id="ch2" height="140"></canvas></div>'+
+  '<div class="card"><h2>Owner-wise performance</h2>'+
+  (Object.keys(c.ownerStats||{}).length?
+    '<table><tr><th>Owner</th><th>Orders</th><th>Sale</th><th>Product Cost</th><th>Packaging</th><th>Direct Profit</th><th>% of Sale</th></tr>'+
+    Object.values(c.ownerStats).map(w=>
+      "<tr><td>"+esc(w.name)+"</td><td>"+w.orders+"</td><td>"+fmt(w.sale)+"</td><td>−"+fmt(w.productCost)+"</td><td>−"+fmt(w.packCost)+"</td><td class='"+(w.profit>=0?'pos':'neg')+"'>"+fmt(w.profit)+"</td><td>"+w.pct+"%</td></tr>"
+    ).join("")+'</table>'+
+    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Direct profit = owner\u2019s sale − their product cost − packaging. Common costs (GST, ads, other, returns, RTO) are shared business-level and shown separately above. Assign owners per SKU in the Cost & owners tab.</p>'
+    :"<p style='color:var(--mut)'>No delivered orders in this period.</p>")+
+  '</div>'+
+  '<div class="card"><h3>Sales & orders trend</h3><canvas id="ch1" height="140"></canvas><h3 style="margin-top:16px">Order outcomes</h3><canvas id="ch2" height="140"></canvas><h3 style="margin-top:16px">Owner-wise sale share</h3><canvas id="ch3" height="140"></canvas></div>'+
   '<div class="note">⚠ GST here is record-keeping support only — verify filings with your CA.</div>';
 }
-let ch1Ref=null,ch2Ref=null;
+let ch1Ref=null,ch2Ref=null,ch3Ref=null;
 function drawCharts(){
   if(!window.Chart)return;
-  if(ch1Ref){ch1Ref.destroy();ch1Ref=null}if(ch2Ref){ch2Ref.destroy();ch2Ref=null}
+  if(ch1Ref){ch1Ref.destroy();ch1Ref=null}if(ch2Ref){ch2Ref.destroy();ch2Ref=null}if(ch3Ref){ch3Ref.destroy();ch3Ref=null}
   const sel=S.dashMonth||"";
-  const c1=document.getElementById("ch1"),c2=document.getElementById("ch2");
+  const c1=document.getElementById("ch1"),c2=document.getElementById("ch2"),c3=document.getElementById("ch3");
   if(c1){
     const byDate={};(S.orders||[]).filter(o=>o.status==="Delivered"&&(!sel||monthKey(o.date)===sel)).forEach(o=>{const k=dmy(o.date);byDate[k]=(byDate[k]||0)+num(o.price)*num(o.qty)});
     const ks=Object.keys(byDate).slice(-14);
@@ -235,6 +259,10 @@ function drawCharts(){
   if(c2){
     const cnt={};(S.orders||[]).filter(o=>!sel||monthKey(o.date)===sel).forEach(o=>{cnt[o.status]=(cnt[o.status]||0)+1});
     try{ch2Ref=new Chart(c2,{type:"doughnut",data:{labels:Object.keys(cnt),datasets:[{data:Object.values(cnt),backgroundColor:["#7c3aed","#3b82f6","#059669","#dc2626","#d97706","#8b5cf6","#64748b"]}]},options:{plugins:{legend:{position:"bottom"}}}});}catch(e){}
+  }
+  if(c3){
+    const os=Object.values(calc(sel).ownerStats||{});
+    if(os.length)try{ch3Ref=new Chart(c3,{type:"doughnut",data:{labels:os.map(w=>w.name),datasets:[{data:os.map(w=>w.sale),backgroundColor:["#7c3aed","#f59e0b","#10b981","#3b82f6"]}]},options:{plugins:{legend:{position:"bottom"}}}});}catch(e){}
   }
 }
 function vUpload(){return '<div class="card"><h2>Upload your Meesho exports</h2>'+
@@ -271,7 +299,7 @@ function vStock(){
   skus.forEach(s=>{
     const sold=(S.orders||[]).filter(o=>o.sku===s&&o.status==="Delivered").reduce((a,o)=>a+num(o.qty),0);
     const low=num(S.stock&&S.stock[s])<=num(S.settings.lowStock);
-    rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+((S.stock&&S.stock[s]!=null)?S.stock[s]:"")+'</td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
+    rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+((S.stock&&S.stock[s]!=null)?S.stock[s]:"")+'"></td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
   });
   return '<div class="card"><h2>Stock on hand</h2>'+(skus.length?'<table><tr><th>SKU</th><th>Current stock</th><th>Sold (delivered)</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No SKUs yet.</p>")+'</div>';
 }
@@ -327,7 +355,7 @@ document.addEventListener("click",e=>{
   if(e.target.closest("#addOc")){S.otherCosts.push({date:document.getElementById("ocd").value,amount:num(document.getElementById("oca").value),note:document.getElementById("ocn").value});save();render();}
   if(e.target.closest("#saveShop")){S.settings.shopName=document.getElementById("sn").value;save();renderNav();render();}
   if(e.target.closest("#dlBtn"))downloadBackup();
-  if(e.target.closest("#saveCloud")){S.settings.supabaseUrl=document.getElementById("su").value;S.settings.supabaseKey=document.getElementById("sk").value;save();alert("Saved locally");}
+  if(e.target.closest("#saveCloud")){S.settings.supabaseUrl=document.getElementById("su").value;S.settings.supabaseKey=document.getElementById("sk").value;save();alert("Saved locally")}
 });
 document.addEventListener("dragover",e=>{if(cur!=="Upload data")return;e.preventDefault();const dz=document.getElementById("dz");if(dz)dz.classList.add("over")});
 document.addEventListener("dragleave",()=>{const dz=document.getElementById("dz");if(dz)dz.classList.remove("over")});
