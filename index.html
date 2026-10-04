@@ -38,6 +38,9 @@ input,select{padding:8px;border:1px solid #d7dae6;border-radius:8px;font-size:14
 .note{font-size:12px;color:var(--warn);margin-top:8px}
 .cloudBadge{font-size:12px;margin-top:8px;padding:6px 10px;border-radius:8px;display:inline-block}
 .cloudOn{background:#ecfdf5;color:var(--ok)} .cloudOff{background:#fef3c7;color:var(--warn)}
+details{margin-top:10px}
+details summary{cursor:pointer;font-size:12.5px;color:var(--mut)}
+pre{white-space:pre-wrap;font-size:11px;background:#f6f7fb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-top:8px;max-height:220px;overflow-y:auto}
 @media(max-width:720px){body{flex-direction:column}aside{width:100%;display:flex;overflow-x:auto}aside h1{display:none}aside button{white-space:nowrap;width:auto}}
 </style>
 </head>
@@ -64,7 +67,7 @@ function normalize(x){
 }
 let S;
 try{S=normalize(JSON.parse(localStorage.getItem("meeshoPortal")||"null"));}catch(e){S=blankState();}
-function save(){localStorage.setItem("meeshoPortal",JSON.stringify(S));cloudPush();}
+function save(){localStorage.setItem("meeshoPortal",JSON.stringify(S));localStorage.setItem("meeshoPortalTs",new Date().toISOString());cloudPush();}
 function fmt(n){return "₹"+(Math.round((n||0)*100)/100).toLocaleString("en-IN")}
 function dmy(d){if(!d)return "—";const x=new Date(d);return isNaN(x)?"—":String(x.getDate()).padStart(2,"0")+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+x.getFullYear()}
 function monthKey(d){if(!d)return "";const x=new Date(d);return isNaN(x)?"":x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")}
@@ -110,6 +113,7 @@ async function cloudPull(){
     if(cloudTs>localTs){
       S=normalize(JSON.parse(rows[0].payload));
       localStorage.setItem("meeshoPortal",JSON.stringify(S));
+      localStorage.setItem("meeshoPortalTs",cloudTs);
       setCloudBadge(true,"☁ Restored from cloud");
     }else{setCloudBadge(true,"☁ Connected — local data is newer")}
     return true;
@@ -402,7 +406,24 @@ function vSettings(){const s=S.settings;
   '<label class="btn gray" style="display:inline-block">⬆ Restore backup<input type="file" accept=".json" id="rsFile" style="display:none"></label>'+
   '<h3 style="margin-top:16px">Cloud database (Supabase)</h3>'+
   '<p style="color:var(--mut);font-size:13px">Data auto-saves in this browser AND syncs to Supabase when URL + anon key are set. Use "Pull latest" to load cloud data onto a new device.</p>'+
-  '<div class="row"><input id="su" placeholder="Supabase URL" value="'+esc(s.supabaseUrl)+'" style="flex:1;min-width:200px"><input id="sk" placeholder="Anon key" value="'+esc(s.supabaseKey)+'" style="flex:1;min-width:200px"><button class="btn" id="saveCloud">Save & test</button></div></div>';
+  '<div class="row"><input id="su" placeholder="Supabase URL" value="'+esc(s.supabaseUrl)+'" style="flex:1;min-width:200px"><input id="sk" placeholder="Anon key" value="'+esc(s.supabaseKey)+'" style="flex:1;min-width:200px"><button class="btn" id="saveCloud">Save & test</button></div>'+
+  '<details><summary>Show setup SQL (run once in Supabase → SQL Editor)</summary>'+
+  '<pre id="supaSql">create table if not exists appdata (\n'+
+  '  id bigint primary key,\n'+
+  '  payload text not null default \x27{}\x27,\n'+
+  '  updated_at timestamptz not null default now()\n'+
+  ');\n\n'+
+  'alter table appdata enable row level security;\n\n'+
+  'create policy "anon can read/write appdata"\n'+
+  '  on appdata for all\n'+
+  '  using (true) with check (true);\n\n'+
+  'insert into appdata (id, payload)\n'+
+  'values (1, \x27{}\x27)\n'+
+  'on conflict (id) do nothing;</pre>'+
+  '<button class="btn gray" id="copySql" style="margin-top:6px">Copy SQL</button>'+
+  '<p style="color:var(--mut);font-size:11.5px;margin-top:6px">This creates one shared row (id=1) that this app reads/writes as a whole — it mirrors exactly what the Save/Pull buttons above call. The anon key is public-readable by design here; don\u2019t put anything sensitive beyond your own business numbers in it.</p>'+
+  '</details>'+
+  '</div>';
 }
 
 /* ============ EVENT WIRING ============ */
@@ -426,8 +447,22 @@ document.addEventListener("click",e=>{
   if(e.target.closest("#addOc")){S.otherCosts.push({date:document.getElementById("ocd").value,amount:num(document.getElementById("oca").value),note:document.getElementById("ocn").value});save();render();}
   if(e.target.closest("#saveShop")){S.settings.shopName=document.getElementById("sn").value;save();renderNav();render();}
   if(e.target.closest("#dlBtn"))downloadBackup();
-  if(e.target.closest("#saveCloud")){S.settings.supabaseUrl=document.getElementById("su").value.trim();S.settings.supabaseKey=document.getElementById("sk").value.trim();save();render();}
+  if(e.target.closest("#saveCloud")){
+    S.settings.supabaseUrl=document.getElementById("su").value.trim();
+    S.settings.supabaseKey=document.getElementById("sk").value.trim();
+    localStorage.setItem("meeshoPortal",JSON.stringify(S));
+    setCloudBadge(true,"☁ Connecting…");render();
+    cloudPull().then(found=>{
+      // No existing row in the cloud yet means this is the first device to
+      // connect — safe to seed the cloud with what's on this device. If a
+      // row DID exist, cloudPull already adopted it, and we must NOT push
+      // afterwards or we'd immediately clobber it with the pre-pull state.
+      if(found===false)cloudPush();
+      renderNav();render();
+    });
+  }
   if(e.target.closest("#pullBtn"))cloudPull().then(ok=>{if(ok!==false){renderNav();render();}});
+  if(e.target.closest("#copySql")){const t=document.getElementById("supaSql").textContent;if(navigator.clipboard)navigator.clipboard.writeText(t);}
 });
 document.addEventListener("dragover",e=>{if(cur!=="Upload data")return;e.preventDefault();const dz=document.getElementById("dz");if(dz)dz.classList.add("over")});
 document.addEventListener("dragleave",()=>{const dz=document.getElementById("dz");if(dz)dz.classList.remove("over")});
