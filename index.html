@@ -43,11 +43,11 @@ input,select{padding:8px;border:1px solid #d7dae6;border-radius:8px;font-size:14
 <aside id="nav"></aside>
 <main id="view"></main>
 <script>
-/* ============ STATE + NORMALIZATION (fixes old saved data) ============ */
+/* ============ STATE + NORMALIZATION ============ */
 const DEF_SETTINGS={gstRate:18,returnLoss:170,adsCost:0,otherFlat:0,rtoLoss:0,lowStock:5,owner1:"Owner 1",owner2:"Owner 2",shopName:"My Store",supabaseUrl:"",supabaseKey:""};
 function blankState(){return {orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},dashMonth:"",settings:{...DEF_SETTINGS}}}
 function normalize(x){
-  const b=blankState();const s=x&&typeof x==="object"?x:{};
+  const s=x&&typeof x==="object"?x:{};
   const safeArr=v=>Array.isArray(v)?v.filter(r=>r&&typeof r==="object"):[];
   const safeObj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
   return {
@@ -154,7 +154,7 @@ function extractPayments(rows,sheet){
 }
 function extractSum(rows,key){const hr=findHeaderRow(rows);let sum=0;for(let i=hr+1;i<rows.length;i++){const r=rows[i]||[];for(const c of r){const v=num(c);if(v)sum+=v}}if(sum)S.payments[key]=(S.payments[key]||0)+sum}
 
-/* ============ CALC (fully guarded) ============ */
+/* ============ CALC ============ */
 function skuVal(obj,sku){return (obj&&typeof obj==="object")?num(obj[sku]):0}
 function returnLossFor(o){const s=(S.settlements||[]).find(x=>x.subOrder===o.subOrder);if(s&&s.amount<0)return s.amount;return o.loss!=null?o.loss:S.settings.returnLoss}
 function calc(selMonth){
@@ -172,7 +172,8 @@ function calc(selMonth){
   const rto=o.filter(x=>x.status==="RTO");
   const returns=o.filter(x=>x.status==="Customer Return");
   const rtoLoss=rto.length*num(st.rtoLoss);
-  const retLoss=returns.reduce((a,x)=>a+returnLossFor(x),0);
+  /* FIX: Math.abs so negative payment-file deductions are treated as losses, not added back */
+  const retLoss=returns.reduce((a,x)=>a+Math.abs(returnLossFor(x)),0);
   const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
   return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o};
 }
@@ -270,7 +271,7 @@ function vStock(){
   skus.forEach(s=>{
     const sold=(S.orders||[]).filter(o=>o.sku===s&&o.status==="Delivered").reduce((a,o)=>a+num(o.qty),0);
     const low=num(S.stock&&S.stock[s])<=num(S.settings.lowStock);
-    rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+((S.stock&&S.stock[s]!=null)?S.stock[s]:"")+'"></td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
+    rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+((S.stock&&S.stock[s]!=null)?S.stock[s]:"")+'</td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
   });
   return '<div class="card"><h2>Stock on hand</h2>'+(skus.length?'<table><tr><th>SKU</th><th>Current stock</th><th>Sold (delivered)</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No SKUs yet.</p>")+'</div>';
 }
@@ -283,9 +284,9 @@ function vReturns(){
     '<td><input data-sub="'+esc(o.subOrder)+'" class="lossIn" value="'+returnLossFor(o)+'"></td></tr>';
   });
   return '<div class="card"><h2>Customer returns ('+r.length+')</h2>'+
-  '<p style="color:var(--mut);font-size:13px">"Actual from payment file" is the deduction Meesho made (negative value). It is used automatically when the payment file covers that order; otherwise the default loss from Settings applies. Total is deducted from Net Profit.</p>'+
+  '<p style="color:var(--mut);font-size:13px">"Actual from payment file" is the deduction Meesho made (shown negative). Profit calculation uses the absolute value so losses are always subtracted correctly.</p>'+
   (r.length?'<table><tr><th>Sub Order</th><th>SKU</th><th>Actual from payment file</th><th>Loss applied ₹</th></tr>'+rows+
-  '<tr><td colspan="3"><b>Total return loss (deducted from profit)</b></td><td><b class="neg">'+fmt(r.reduce((a,o)=>a+returnLossFor(o),0))+'</b></td></tr></table>':"<p style='color:var(--mut)'>No customer returns uploaded yet.</p>")+'</div>';
+  '<tr><td colspan="3"><b>Total return loss (deducted from profit)</b></td><td><b class="neg">'+fmt(r.reduce((a,o)=>a+Math.abs(returnLossFor(o)),0))+'</b></td></tr></table>':"<p style='color:var(--mut)'>No customer returns uploaded yet.</p>")+'</div>';
 }
 function vReceived(){const paid=(S.settlements||[]).filter(s=>s.scheduled);
   return '<div class="card"><h2>Received payment ('+paid.length+') — '+fmt(paid.reduce((a,s)=>a+num(s.amount),0))+'</h2>'+
