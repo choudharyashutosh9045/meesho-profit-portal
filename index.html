@@ -102,7 +102,12 @@ function parseRows(raw,fileName){
     if(seen.has(sub)){dup++;continue}
     seen.add(sub);
     const statusRaw=norm(map.status!==undefined?r[map.status]:"");
-    let st="New";if(/cancel/.test(statusRaw))st="Cancelled";else if(/\brto\b/.test(statusRaw))st="RTO";else if(/return/.test(statusRaw))st="Customer Return";else if(/deliver/.test(statusRaw))st="Delivered";else if(/ship|transit|dispatch/.test(statusRaw))st="Shipped";
+    let st="New";
+    if(/cancel/.test(statusRaw))st="Cancelled";
+    else if(/\brto\b/.test(statusRaw))st="RTO";
+    else if(/return/.test(statusRaw))st="Customer Return";
+    else if(/deliver/.test(statusRaw))st="Delivered";
+    else if(/ship|transit|dispatch/.test(statusRaw))st="Shipped";
     S.orders.push({subOrder:sub,order:map.order!==undefined?String(r[map.order]||"").trim():sub,sku:map.sku!==undefined?String(r[map.sku]||"").trim():"",qty:Math.max(1,num(map.qty!==undefined?r[map.qty]:1)||1),price:num(map.price!==undefined?r[map.price]:0),status:st,date:map.date!==undefined?(r[map.date]||""):""});
     added++;
   }
@@ -114,19 +119,19 @@ async function handleFiles(files){
   let total=0,totalDup=0;const log=[];
   for(const f of files){
     try{
-      const isX=/\.xlsx?$|\.xls$/.test(f.name.toLowerCase());
-      if(isX){
+      if(/\.xlsx?$|\.xls$/.test(f.name.toLowerCase())){
         const wb=XLSX.read(await f.arrayBuffer(),{cellDates:true});
         for(const sn of wb.SheetNames){
           const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:""});
           if(!rows.length)continue;
           const n=norm(sn);
           try{
-            if(/payment|settle/.test(n)||wb.SheetNames.length===1){const res=parseRows(rows,f.name+" ["+sn+"]");total+=res.added;totalDup+=res.dup;extractPayments(rows,sn);continue;}
             if(/ads/.test(n)){extractSum(rows,"ads");log.push("✓ Ads sheet read");continue;}
             if(/referral/.test(n)){extractSum(rows,"referrals");log.push("✓ Referral sheet read");continue;}
             if(/compens|recover/.test(n)){extractSum(rows,"compensations");log.push("✓ Compensation sheet read");continue;}
-            const res=parseRows(rows,f.name+" ["+sn+"]");total+=res.added;totalDup+=res.dup;
+            const res=parseRows(rows,f.name+" ["+sn+"]");
+            total+=res.added;totalDup+=res.dup;
+            extractPayments(rows,sn);
           }catch(e){log.push("⚠ "+sn+": "+e.message)}
         }
       }else{
@@ -164,7 +169,9 @@ function calc(selMonth){
   const delivered=o.filter(x=>x.status==="Delivered");
   const netSale=delivered.reduce((a,x)=>a+num(x.price)*num(x.qty),0);
   const productCost=delivered.reduce((a,x)=>a+skuVal(S.skuCost,x.sku)*num(x.qty),0);
-  const packCost=delivered.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
+  /* Packaging on ALL packed units: delivered + RTO + customer returns */
+  const packedUnits=o.filter(x=>["Delivered","RTO","Customer Return"].includes(x.status));
+  const packCost=packedUnits.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
   const gst=netSale*num(st.gstRate)/118;
   const oc=(selMonth?(S.otherCosts||[]).filter(c=>monthKey(c.date)===selMonth):(S.otherCosts||[])).reduce((a,c)=>a+num(c.amount),0);
   const other=num(st.otherFlat)+oc;
@@ -189,11 +196,11 @@ function calc(selMonth){
   Object.keys(owners).forEach(k=>{
     const w=owners[k];
     w.share=w.sale/(netSale||1);
-    w.sharedCost=w.share*shared; /* GST, ads, other, returns, RTO split by sale share */
+    w.sharedCost=w.share*shared;
     w.profit=w.sale-w.productCost-w.packCost-w.sharedCost;
     w.pct=Math.round(w.share*100);
   });
-  return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o,ownerStats:owners};
+  return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o,packedUnits,ownerStats:owners};
 }
 
 /* ============ SAFE SETTERS ============ */
@@ -228,7 +235,7 @@ function vDash(){
   '<div class="card"><h2>Profit & Loss</h2><table>'+
   "<tr><td>Total Sale</td><td>"+fmt(c.netSale)+"</td><td>"+c.delivered.length+" delivered</td></tr>"+
   "<tr><td>Product Cost</td><td>−"+fmt(c.productCost)+"</td><td></td></tr>"+
-  "<tr><td>Packaging cost</td><td>−"+fmt(c.packCost)+"</td><td>per-SKU, Cost & owners tab</td></tr>"+
+  "<tr><td>Packaging cost</td><td>−"+fmt(c.packCost)+"</td><td>delivered + RTO + returns ("+c.packedUnits.length+" packed units)</td></tr>"+
   "<tr><td>GST "+st.gstRate+"% (from sale)</td><td>−"+fmt(c.gst)+"</td><td>deducted from profit</td></tr>"+
   "<tr><td>Other cost</td><td>−"+fmt(c.other)+"</td><td></td></tr>"+
   "<tr><td>Ads cost</td><td>−"+fmt(c.ads)+"</td><td></td></tr>"+
@@ -289,7 +296,7 @@ function vCost(){
   '<div><label>Owner 2 name</label><br><input id="o2" value="'+esc(S.settings.owner2)+'"></div>'+
   '<button class="btn" id="saveOwners">Save names</button></div>'+
   '<h3>Product cost prices + packaging cost</h3>'+
-  '<p style="color:var(--mut);font-size:13px">"Other cost (packaging)" is per-unit and is subtracted from profit for every delivered unit.</p>'+
+  '<p style="color:var(--mut);font-size:13px">Packaging cost is per-unit and counted on every packed unit (delivered, RTO, and customer return).</p>'+
   (skus.length?'<table><tr><th>SKU</th><th>Cost ₹</th><th>Other cost (packaging) ₹</th><th>Owner</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No SKUs yet.</p>")+'</div>';
 }
 function vOther(){return '<div class="card"><h2>Other cost ledger</h2>'+
