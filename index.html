@@ -172,9 +172,12 @@ function calc(selMonth){
   const delivered=o.filter(x=>x.status==="Delivered");
   const netSale=delivered.reduce((a,x)=>a+num(x.price)*num(x.qty),0);
   const productCost=delivered.reduce((a,x)=>a+skuVal(S.skuCost,x.sku)*num(x.qty),0);
-  /* Packaging on ALL packed units: delivered + RTO + customer returns */
   const packedUnits=o.filter(x=>["Delivered","RTO","Customer Return"].includes(x.status));
   const packCost=packedUnits.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
+  /* packaging charged directly per owner = delivered orders only */
+  const packCostDelivered=delivered.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
+  /* packaging on RTO + returns goes into the shared pool */
+  const packCostShared=packCost-packCostDelivered;
   const gst=netSale*num(st.gstRate)/118;
   const oc=(selMonth?(S.otherCosts||[]).filter(c=>monthKey(c.date)===selMonth):(S.otherCosts||[])).reduce((a,c)=>a+num(c.amount),0);
   const other=num(st.otherFlat)+oc;
@@ -184,7 +187,7 @@ function calc(selMonth){
   const rtoLoss=rto.length*num(st.rtoLoss);
   const retLoss=returns.reduce((a,x)=>a+Math.abs(returnLossFor(x)),0);
   const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
-  /* owner-wise split (hardened) */
+  /* owner-wise split */
   const owners={};
   delivered.forEach(x=>{
     const own=ownerOf(x.sku);
@@ -195,7 +198,8 @@ function calc(selMonth){
     w.packCost+=skuVal(S.skuPack,x.sku)*num(x.qty);
     w.orders++;
   });
-  const shared=other+ads+rtoLoss+retLoss+gst;
+  /* shared pool includes RTO/return packaging so totals always match */
+  const shared=other+ads+rtoLoss+retLoss+gst+packCostShared;
   Object.keys(owners).forEach(k=>{
     const w=owners[k];
     w.share=netSale>0?w.sale/netSale:0;
@@ -203,7 +207,7 @@ function calc(selMonth){
     w.profit=w.sale-w.productCost-w.packCost-w.sharedCost;
     w.pct=Math.round(w.share*100);
   });
-  return {netSale,productCost,packCost,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o,packedUnits,ownerStats:owners};
+  return {netSale,productCost,packCost,packCostShared,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o,packedUnits,ownerStats:owners};
 }
 
 /* ============ SAFE SETTERS ============ */
@@ -229,7 +233,7 @@ function ownerTableHTML(c){
     list.map(w=>
       "<tr><td>"+esc(w.name)+"</td><td>"+w.orders+"</td><td>"+fmt(w.sale)+"</td><td>−"+fmt(w.productCost)+"</td><td>−"+fmt(w.packCost)+"</td><td>−"+fmt(w.sharedCost)+"</td><td class='"+(w.profit>=0?'pos':'neg')+"'>"+fmt(w.profit)+"</td><td>"+w.pct+"%</td></tr>"
     ).join("")+'</table>'+
-    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Shared costs (GST, ads, other, returns, RTO) are split between owners in proportion to each owner\u2019s share of sale, so owner profits always add up to the total Net Profit above. Assign owners per SKU in the Cost & owners tab.</p>';
+    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Each owner is charged product + packaging on their own delivered orders. Shared costs (GST, ads, other, returns, RTO, and packaging on RTO/return parcels) are split in proportion to each owner\u2019s share of sale — so owner profits always add up exactly to the total Net Profit above. Assign owners per SKU in the Cost & owners tab.</p>';
 }
 function vDash(){
   const sel=S.dashMonth||"",c=calc(sel),st=S.settings;
