@@ -36,6 +36,8 @@ input,select{padding:8px;border:1px solid #d7dae6;border-radius:8px;font-size:14
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
 .pos{color:var(--ok)} .neg{color:var(--bad)}
 .note{font-size:12px;color:var(--warn);margin-top:8px}
+.cloudBadge{font-size:12px;margin-top:8px;padding:6px 10px;border-radius:8px;display:inline-block}
+.cloudOn{background:#ecfdf5;color:var(--ok)} .cloudOff{background:#fef3c7;color:var(--warn)}
 @media(max-width:720px){body{flex-direction:column}aside{width:100%;display:flex;overflow-x:auto}aside h1{display:none}aside button{white-space:nowrap;width:auto}}
 </style>
 </head>
@@ -62,13 +64,65 @@ function normalize(x){
 }
 let S;
 try{S=normalize(JSON.parse(localStorage.getItem("meeshoPortal")||"null"));}catch(e){S=blankState();}
-save();
-function save(){localStorage.setItem("meeshoPortal",JSON.stringify(S))}
+function save(){localStorage.setItem("meeshoPortal",JSON.stringify(S));cloudPush();}
 function fmt(n){return "₹"+(Math.round((n||0)*100)/100).toLocaleString("en-IN")}
 function dmy(d){if(!d)return "—";const x=new Date(d);return isNaN(x)?"—":String(x.getDate()).padStart(2,"0")+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+x.getFullYear()}
 function monthKey(d){if(!d)return "";const x=new Date(d);return isNaN(x)?"":x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")}
 function monthLabel(k){if(!k)return "";const p=k.split("-");return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+p[1]-1]+" "+p[0]}
 function num(x){const n=parseFloat(String(x==null?"":x).replace(/[₹,\s]/g,""));return isNaN(n)?0:n}
+
+/* ============ SUPABASE CLOUD SYNC ============ */
+function cloudCfg(){const s=S.settings||{};return {url:String(s.supabaseUrl||"").replace(/\/+$/,""),key:String(s.supabaseKey||"")}}
+function cloudReady(){const c=cloudCfg();return /^https:\/\/.+\.supabase\.co$/.test(c.url)&&c.key.length>20}
+let cloudPushTimer=null;
+function cloudPush(){
+  if(!cloudReady())return;
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer=setTimeout(async()=>{
+    try{
+      const c=cloudCfg();
+      const res=await fetch(c.url+"/rest/v1/appdata?id=eq.1",{
+        method:"PATCH",
+        headers:{"apikey":c.key,"Authorization":"Bearer "+c.key,"Content-Type":"application/json","Prefer":"return=minimal"},
+        body:JSON.stringify({payload:JSON.stringify(S),updated_at:new Date().toISOString()})
+      });
+      if(res.ok){setCloudBadge(true,"☁ Synced");return}
+      /* row may not exist yet — try insert */
+      const ins=await fetch(c.url+"/rest/v1/appdata",{
+        method:"POST",
+        headers:{"apikey":c.key,"Authorization":"Bearer "+c.key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates"},
+        body:JSON.stringify([{id:1,payload:JSON.stringify(S),updated_at:new Date().toISOString()}])
+      });
+      setCloudBadge(ins.ok,ins.ok?"☁ Synced":"⚠ Cloud sync failed");
+    }catch(e){setCloudBadge(false,"⚠ Cloud offline — saved locally")}
+  },800);
+}
+async function cloudPull(){
+  if(!cloudReady())return false;
+  try{
+    const c=cloudCfg();
+    const res=await fetch(c.url+"/rest/v1/appdata?id=eq.1&select=payload,updated_at",{headers:{"apikey":c.key,"Authorization":"Bearer "+c.key}});
+    if(!res.ok)return false;
+    const rows=await res.json();
+    if(!rows.length)return false;
+    const localTs=localStorage.getItem("meeshoPortalTs")||"";
+    const cloudTs=rows[0].updated_at||"";
+    if(cloudTs>localTs){
+      S=normalize(JSON.parse(rows[0].payload));
+      localStorage.setItem("meeshoPortal",JSON.stringify(S));
+      setCloudBadge(true,"☁ Restored from cloud");
+    }else{setCloudBadge(true,"☁ Connected — local data is newer")}
+    return true;
+  }catch(e){setCloudBadge(false,"⚠ Cloud offline — using local data");return false}
+}
+function setCloudBadge(ok,text){
+  const b=document.getElementById("cloudBadge");
+  if(b){b.className="cloudBadge "+(ok?"cloudOn":"cloudOff");b.textContent=text}
+}
+function cloudBadgeHTML(){
+  if(!cloudReady())return '<div id="cloudBadge" class="cloudBadge cloudOff">☁ Cloud not configured</div>';
+  return '<div id="cloudBadge" class="cloudBadge cloudOn">☁ Connecting…</div>';
+}
 
 /* ============ NAV ============ */
 const TABS=["Dashboard","Upload data","All orders","Cost & owners","Other cost","Stock","Returns","Received payment","Pending payment","Settings"];
@@ -174,9 +228,7 @@ function calc(selMonth){
   const productCost=delivered.reduce((a,x)=>a+skuVal(S.skuCost,x.sku)*num(x.qty),0);
   const packedUnits=o.filter(x=>["Delivered","RTO","Customer Return"].includes(x.status));
   const packCost=packedUnits.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
-  /* packaging charged directly per owner = delivered orders only */
   const packCostDelivered=delivered.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
-  /* packaging on RTO + returns goes into the shared pool */
   const packCostShared=packCost-packCostDelivered;
   const gst=netSale*num(st.gstRate)/118;
   const oc=(selMonth?(S.otherCosts||[]).filter(c=>monthKey(c.date)===selMonth):(S.otherCosts||[])).reduce((a,c)=>a+num(c.amount),0);
@@ -187,7 +239,6 @@ function calc(selMonth){
   const rtoLoss=rto.length*num(st.rtoLoss);
   const retLoss=returns.reduce((a,x)=>a+Math.abs(returnLossFor(x)),0);
   const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
-  /* owner-wise split */
   const owners={};
   delivered.forEach(x=>{
     const own=ownerOf(x.sku);
@@ -198,7 +249,6 @@ function calc(selMonth){
     w.packCost+=skuVal(S.skuPack,x.sku)*num(x.qty);
     w.orders++;
   });
-  /* shared pool includes RTO/return packaging so totals always match */
   const shared=other+ads+rtoLoss+retLoss+gst+packCostShared;
   Object.keys(owners).forEach(k=>{
     const w=owners[k];
@@ -284,7 +334,7 @@ function drawCharts(){
   }
 }
 function vUpload(){return '<div class="card"><h2>Upload your Meesho exports</h2>'+
- '<p style="color:var(--mut);font-size:13px;margin-bottom:12px">Orders CSV/XLSX + payment file (all sheets picked up automatically — return deductions from the payment file are used as the actual return loss). Duplicates are skipped by Sub Order No. Nothing leaves your browser.</p>'+
+ '<p style="color:var(--mut);font-size:13px;margin-bottom:12px">Orders CSV/XLSX + payment file (all sheets picked up automatically — return deductions from the payment file are used as the actual return loss). Duplicates are skipped by Sub Order No. Nothing leaves your browser except the cloud backup.</p>'+
  '<div class="drop" id="dz">📄 Drag & drop your Meesho files here<br><small style="color:var(--mut)">— or click to browse —</small><input type="file" id="fp" multiple accept=".csv,.xlsx,.xls" style="display:none"></div>'+
  '<div id="impMsg" class="msg"></div>'+
  '<button class="btn gray" style="margin-top:12px" id="resetBtn">Reset this business\u2019s data</button></div>'}
@@ -346,11 +396,13 @@ function vSettings(){const s=S.settings;
   '<div><label>Shop name</label><br><input id="sn" value="'+esc(s.shopName||"")+'"><br><small style="color:var(--mut)">Editable — shows on dashboard & sidebar</small></div>'+
   [["gstRate","GST rate %"],["returnLoss","Return default loss ₹"],["adsCost","Ads cost ₹"],["otherFlat","Other cost flat ₹"],["rtoLoss","RTO loss ₹"],["lowStock","Low stock alert"]].map(p=>'<div><label>'+p[1]+'</label><br><input type="number" value="'+num(s[p[0]])+'" data-set="'+p[0]+'"></div>').join("")+
   '<button class="btn" id="saveShop">Save shop name</button></div>'+
-  '<h3>Backup & restore</h3><button class="btn" id="dlBtn">⬇ Download backup (JSON)</button>'+
+  '<h3>Cloud sync status</h3>'+cloudBadgeHTML()+
+  '<button class="btn" id="pullBtn" style="margin-top:8px">⬇ Pull latest from cloud now</button>'+
+  '<h3 style="margin-top:16px">Backup & restore</h3><button class="btn" id="dlBtn">⬇ Download backup (JSON)</button>'+
   '<label class="btn gray" style="display:inline-block">⬆ Restore backup<input type="file" accept=".json" id="rsFile" style="display:none"></label>'+
-  '<h3>Cloud database (optional)</h3>'+
-  '<p style="color:var(--mut);font-size:13px">Data auto-saves in this browser. For cross-device sync, connect a free Supabase project and paste its URL + anon key here.</p>'+
-  '<div class="row"><input id="su" placeholder="Supabase URL" value="'+esc(s.supabaseUrl)+'" style="flex:1;min-width:200px"><input id="sk" placeholder="Anon key" value="'+esc(s.supabaseKey)+'" style="flex:1;min-width:200px"><button class="btn" id="saveCloud">Save</button></div></div>';
+  '<h3 style="margin-top:16px">Cloud database (Supabase)</h3>'+
+  '<p style="color:var(--mut);font-size:13px">Data auto-saves in this browser AND syncs to Supabase when URL + anon key are set. Use "Pull latest" to load cloud data onto a new device.</p>'+
+  '<div class="row"><input id="su" placeholder="Supabase URL" value="'+esc(s.supabaseUrl)+'" style="flex:1;min-width:200px"><input id="sk" placeholder="Anon key" value="'+esc(s.supabaseKey)+'" style="flex:1;min-width:200px"><button class="btn" id="saveCloud">Save & test</button></div></div>';
 }
 
 /* ============ EVENT WIRING ============ */
@@ -374,7 +426,8 @@ document.addEventListener("click",e=>{
   if(e.target.closest("#addOc")){S.otherCosts.push({date:document.getElementById("ocd").value,amount:num(document.getElementById("oca").value),note:document.getElementById("ocn").value});save();render();}
   if(e.target.closest("#saveShop")){S.settings.shopName=document.getElementById("sn").value;save();renderNav();render();}
   if(e.target.closest("#dlBtn"))downloadBackup();
-  if(e.target.closest("#saveCloud")){S.settings.supabaseUrl=document.getElementById("su").value;S.settings.supabaseKey=document.getElementById("sk").value;save();alert("Saved locally")}
+  if(e.target.closest("#saveCloud")){S.settings.supabaseUrl=document.getElementById("su").value.trim();S.settings.supabaseKey=document.getElementById("sk").value.trim();save();render();}
+  if(e.target.closest("#pullBtn"))cloudPull().then(ok=>{if(ok!==false){renderNav();render();}});
 });
 document.addEventListener("dragover",e=>{if(cur!=="Upload data")return;e.preventDefault();const dz=document.getElementById("dz");if(dz)dz.classList.add("over")});
 document.addEventListener("dragleave",()=>{const dz=document.getElementById("dz");if(dz)dz.classList.remove("over")});
@@ -382,7 +435,16 @@ document.addEventListener("drop",e=>{if(cur!=="Upload data")return;e.preventDefa
 function downloadBackup(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:"application/json"}));a.download="meesho-backup-"+new Date().toISOString().slice(0,10)+".json";a.click()}
 function restore(f){const r=new FileReader();r.onload=()=>{try{S=normalize(JSON.parse(r.result));save();renderNav();render();alert("Backup restored")}catch(e){alert("Invalid backup file")}};r.readAsText(f)}
 
-renderNav();render();
+/* ============ STARTUP: pull cloud data if newer ============ */
+async function startup(){
+  renderNav();render();
+  if(cloudReady()){
+    const before=JSON.stringify(S);
+    await cloudPull();
+    if(JSON.stringify(S)!==before){renderNav();render();}
+  }
+}
+startup();
 </script>
 </body>
 </html>
