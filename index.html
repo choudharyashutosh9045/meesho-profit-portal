@@ -162,8 +162,11 @@ function extractSum(rows,key){const hr=findHeaderRow(rows);let sum=0;for(let i=h
 /* ============ CALC ============ */
 function skuVal(obj,sku){return (obj&&typeof obj==="object")?num(obj[sku]):0}
 function returnLossFor(o){const s=(S.settlements||[]).find(x=>x.subOrder===o.subOrder);if(s&&s.amount<0)return s.amount;return o.loss!=null?o.loss:S.settings.returnLoss}
+function ownerOf(sku){if(!S.skuOwner||typeof S.skuOwner!=="object")return "o1";return S.skuOwner[sku]==="o2"?"o2":"o1"}
+function ownerName(k){return k==="o2"?(S.settings.owner2||"Owner 2"):(S.settings.owner1||"Owner 1")}
 function calc(selMonth){
   const st=S.settings||DEF_SETTINGS;
+  if(!S.skuOwner||typeof S.skuOwner!=="object")S.skuOwner={};
   let o=S.orders||[];
   if(selMonth)o=o.filter(x=>monthKey(x.date)===selMonth);
   const delivered=o.filter(x=>x.status==="Delivered");
@@ -181,11 +184,11 @@ function calc(selMonth){
   const rtoLoss=rto.length*num(st.rtoLoss);
   const retLoss=returns.reduce((a,x)=>a+Math.abs(returnLossFor(x)),0);
   const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
-  /* owner-wise split */
+  /* owner-wise split (hardened) */
   const owners={};
   delivered.forEach(x=>{
-    const own=(S.skuOwner&&S.skuOwner[x.sku]==="o2")?"o2":"o1";
-    if(!owners[own])owners[own]={name:own==="o1"?st.owner1:st.owner2,sale:0,productCost:0,packCost:0,orders:0};
+    const own=ownerOf(x.sku);
+    if(!owners[own])owners[own]={key:own,name:ownerName(own),sale:0,productCost:0,packCost:0,orders:0};
     const w=owners[own];
     w.sale+=num(x.price)*num(x.qty);
     w.productCost+=skuVal(S.skuCost,x.sku)*num(x.qty);
@@ -195,8 +198,8 @@ function calc(selMonth){
   const shared=other+ads+rtoLoss+retLoss+gst;
   Object.keys(owners).forEach(k=>{
     const w=owners[k];
-    w.share=w.sale/(netSale||1);
-    w.sharedCost=w.share*shared;
+    w.share=netSale>0?w.sale/netSale:0;
+    w.sharedCost=Math.round(w.share*shared*100)/100;
     w.profit=w.sale-w.productCost-w.packCost-w.sharedCost;
     w.pct=Math.round(w.share*100);
   });
@@ -218,6 +221,15 @@ function monthPicker(){
   let opts='<option value="ALL"'+(curM==="ALL"?" selected":"")+'>All months</option>';
   ms.forEach(k=>{opts+='<option value="'+k+'"'+(curM===k?" selected":"")+'>'+monthLabel(k)+'</option>'});
   return '<div class="row" style="margin-bottom:10px"><div><label>Month filter</label><br><select onchange="setMonth(this.value)">'+opts+'</select></div></div>';
+}
+function ownerTableHTML(c){
+  const list=Object.values(c.ownerStats||{});
+  if(!c.delivered.length)return '<p style="color:var(--mut)">No delivered orders in this period yet — assign owners per SKU in the Cost & owners tab, then come back.</p>';
+  return '<table><tr><th>Owner</th><th>Orders</th><th>Sale</th><th>Product Cost</th><th>Packaging</th><th>Shared Costs</th><th>Net Profit</th><th>% of Sale</th></tr>'+
+    list.map(w=>
+      "<tr><td>"+esc(w.name)+"</td><td>"+w.orders+"</td><td>"+fmt(w.sale)+"</td><td>−"+fmt(w.productCost)+"</td><td>−"+fmt(w.packCost)+"</td><td>−"+fmt(w.sharedCost)+"</td><td class='"+(w.profit>=0?'pos':'neg')+"'>"+fmt(w.profit)+"</td><td>"+w.pct+"%</td></tr>"
+    ).join("")+'</table>'+
+    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Shared costs (GST, ads, other, returns, RTO) are split between owners in proportion to each owner\u2019s share of sale, so owner profits always add up to the total Net Profit above. Assign owners per SKU in the Cost & owners tab.</p>';
 }
 function vDash(){
   const sel=S.dashMonth||"",c=calc(sel),st=S.settings;
@@ -243,15 +255,7 @@ function vDash(){
   "<tr><td>Customer Return loss</td><td>−"+fmt(c.retLoss)+"</td><td>"+c.returns.length+" orders (actual from payment file where available)</td></tr>"+
   "<tr><td><b>Net Profit</b></td><td><b class='"+(c.netProfit>=0?'pos':'neg')+"'>"+fmt(c.netProfit)+"</b></td><td>sale − all costs − GST − losses</td></tr>"+
   '</table></div>'+
-  '<div class="card"><h2>Owner-wise performance</h2>'+
-  (Object.keys(c.ownerStats||{}).length?
-    '<table><tr><th>Owner</th><th>Orders</th><th>Sale</th><th>Product Cost</th><th>Packaging</th><th>Shared Costs</th><th>Net Profit</th><th>% of Sale</th></tr>'+
-    Object.values(c.ownerStats).map(w=>
-      "<tr><td>"+esc(w.name)+"</td><td>"+w.orders+"</td><td>"+fmt(w.sale)+"</td><td>−"+fmt(w.productCost)+"</td><td>−"+fmt(w.packCost)+"</td><td>−"+fmt(w.sharedCost)+"</td><td class='"+(w.profit>=0?'pos':'neg')+"'>"+fmt(w.profit)+"</td><td>"+w.pct+"%</td></tr>"
-    ).join("")+'</table>'+
-    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Shared costs (GST, ads, other, returns, RTO) are split between owners in proportion to each owner\u2019s share of sale, so owner profits always add up to the total Net Profit above. Assign owners per SKU in the Cost & owners tab.</p>'
-    :"<p style='color:var(--mut)'>No delivered orders in this period.</p>")+
-  '</div>'+
+  '<div class="card"><h2>Owner-wise performance</h2>'+ownerTableHTML(c)+'</div>'+
   '<div class="card"><h3>Sales & orders trend</h3><canvas id="ch1" height="140"></canvas><h3 style="margin-top:16px">Order outcomes</h3><canvas id="ch2" height="140"></canvas><h3 style="margin-top:16px">Owner-wise sale share</h3><canvas id="ch3" height="140"></canvas></div>'+
   '<div class="note">⚠ GST here is record-keeping support only — verify filings with your CA.</div>';
 }
@@ -286,10 +290,11 @@ function vCost(){
   const skus=[...new Set((S.orders||[]).map(o=>o.sku).filter(Boolean))];
   let rows="";
   skus.forEach(s=>{
+    const own=S.skuOwner&&typeof S.skuOwner==="object"?S.skuOwner[s]:undefined;
     rows+='<tr><td>'+esc(s)+'</td>'+
     '<td><input data-sku="'+esc(s)+'" data-field="skuCost" value="'+((S.skuCost&&S.skuCost[s]!=null)?S.skuCost[s]:"")+'"></td>'+
     '<td><input data-sku="'+esc(s)+'" data-field="skuPack" value="'+((S.skuPack&&S.skuPack[s]!=null)?S.skuPack[s]:"")+'"></td>'+
-    '<td><select data-sku="'+esc(s)+'" class="ownerSel"><option value="o1"'+((!S.skuOwner||S.skuOwner[s]!=="o2")?" selected":"")+'>'+esc(S.settings.owner1)+'</option><option value="o2"'+((S.skuOwner&&S.skuOwner[s]==="o2")?" selected":"")+'>'+esc(S.settings.owner2)+'</option></select></td></tr>';
+    '<td><select data-sku="'+esc(s)+'" class="ownerSel"><option value="o1"'+(own!=="o2"?" selected":"")+'>'+esc(S.settings.owner1)+'</option><option value="o2"'+(own==="o2"?" selected":"")+'>'+esc(S.settings.owner2)+'</option></select></td></tr>';
   });
   return '<div class="card"><h2>Cost & owners</h2>'+
   '<div class="row"><div><label>Owner 1 name</label><br><input id="o1" value="'+esc(S.settings.owner1)+'"></div>'+
