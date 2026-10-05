@@ -78,26 +78,32 @@ function num(x){const n=parseFloat(String(x==null?"":x).replace(/[₹,\s]/g,""))
 function cloudCfg(){const s=S.settings||{};return {url:String(s.supabaseUrl||"").replace(/\/+$/,""),key:String(s.supabaseKey||"")}}
 function cloudReady(){const c=cloudCfg();return /^https:\/\/.+\.supabase\.co$/.test(c.url)&&c.key.length>20}
 let cloudPushTimer=null;
+async function describeHttpError(res){
+  let body="";
+  try{ body=(await res.text()).slice(0,140); }catch(e){}
+  if(res.status===401||res.status===403)return "⚠ Rejected ("+res.status+") — check the anon key is pasted correctly";
+  if(res.status===404)return "⚠ Table not found (404) — run the setup SQL in Supabase first";
+  if(body)return "⚠ Sync failed ("+res.status+"): "+body;
+  return "⚠ Sync failed ("+res.status+")";
+}
 function cloudPush(){
   if(!cloudReady())return;
   clearTimeout(cloudPushTimer);
   cloudPushTimer=setTimeout(async()=>{
     try{
       const c=cloudCfg();
-      const res=await fetch(c.url+"/rest/v1/appdata?id=eq.1",{
-        method:"PATCH",
-        headers:{"apikey":c.key,"Authorization":"Bearer "+c.key,"Content-Type":"application/json","Prefer":"return=minimal"},
-        body:JSON.stringify({payload:JSON.stringify(S),updated_at:new Date().toISOString()})
-      });
-      if(res.ok){setCloudBadge(true,"☁ Synced");return}
-      /* row may not exist yet — try insert */
-      const ins=await fetch(c.url+"/rest/v1/appdata",{
+      // A single upsert (insert, or update on primary-key conflict) instead of
+      // PATCH-then-POST-fallback — a PATCH that matches zero rows still
+      // returns 200 OK in PostgREST, which made the old code claim "Synced"
+      // even when nothing was actually saved.
+      const res=await fetch(c.url+"/rest/v1/appdata",{
         method:"POST",
-        headers:{"apikey":c.key,"Authorization":"Bearer "+c.key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates"},
+        headers:{"apikey":c.key,"Authorization":"Bearer "+c.key,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
         body:JSON.stringify([{id:1,payload:JSON.stringify(S),updated_at:new Date().toISOString()}])
       });
-      setCloudBadge(ins.ok,ins.ok?"☁ Synced":"⚠ Cloud sync failed");
-    }catch(e){setCloudBadge(false,"⚠ Cloud offline — saved locally")}
+      if(res.ok){setCloudBadge(true,"☁ Synced "+new Date().toLocaleTimeString());return}
+      setCloudBadge(false,await describeHttpError(res));
+    }catch(e){setCloudBadge(false,"⚠ Cloud offline — saved locally ("+e.message+")")}
   },800);
 }
 async function cloudPull(){
@@ -105,9 +111,9 @@ async function cloudPull(){
   try{
     const c=cloudCfg();
     const res=await fetch(c.url+"/rest/v1/appdata?id=eq.1&select=payload,updated_at",{headers:{"apikey":c.key,"Authorization":"Bearer "+c.key}});
-    if(!res.ok)return false;
+    if(!res.ok){setCloudBadge(false,await describeHttpError(res));return false}
     const rows=await res.json();
-    if(!rows.length)return false;
+    if(!rows.length){setCloudBadge(true,"☁ Connected — no cloud data yet");return false}
     const localTs=localStorage.getItem("meeshoPortalTs")||"";
     const cloudTs=rows[0].updated_at||"";
     if(cloudTs>localTs){
