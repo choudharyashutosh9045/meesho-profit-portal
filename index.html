@@ -125,11 +125,18 @@ async function cloudPull(){
     return true;
   }catch(e){setCloudBadge(false,"⚠ Cloud offline — using local data");return false}
 }
+let lastCloudStatus=null; // {ok,text} — the real outcome of the last sync attempt, kept across re-renders
 function setCloudBadge(ok,text){
+  lastCloudStatus={ok:ok,text:text};
   const b=document.getElementById("cloudBadge");
   if(b){b.className="cloudBadge "+(ok?"cloudOn":"cloudOff");b.textContent=text}
 }
 function cloudBadgeHTML(){
+  // Once we actually know something real (synced / restored / an error), keep
+  // showing that even after the Settings view re-renders — otherwise a plain
+  // render() right after a sync attempt wipes the real status back to this
+  // generic placeholder, which looked like "it's broken" even when it worked.
+  if(lastCloudStatus)return '<div id="cloudBadge" class="cloudBadge '+(lastCloudStatus.ok?"cloudOn":"cloudOff")+'">'+esc(lastCloudStatus.text)+'</div>';
   if(!cloudReady())return '<div id="cloudBadge" class="cloudBadge cloudOff">☁ Cloud not configured</div>';
   return '<div id="cloudBadge" class="cloudBadge cloudOn">☁ Connecting…</div>';
 }
@@ -457,6 +464,13 @@ document.addEventListener("click",e=>{
     S.settings.supabaseUrl=document.getElementById("su").value.trim();
     S.settings.supabaseKey=document.getElementById("sk").value.trim();
     localStorage.setItem("meeshoPortal",JSON.stringify(S));
+    if(!cloudReady()){
+      const reason=!/^https:\/\/.+\.supabase\.co$/.test(S.settings.supabaseUrl)
+        ? "⚠ URL doesn't look right — it should be exactly https://xxxx.supabase.co (no trailing slash or /rest/v1)"
+        : "⚠ Anon key looks too short — make sure the whole key got pasted";
+      setCloudBadge(false,reason);render();
+      return;
+    }
     setCloudBadge(true,"☁ Connecting…");render();
     cloudPull().then(found=>{
       // No existing row in the cloud yet means this is the first device to
