@@ -49,28 +49,43 @@ pre{white-space:pre-wrap;font-size:11px;background:#f6f7fb;border:1px solid #e5e
 <main id="view"></main>
 <script>
 /* ============ STATE + NORMALIZATION ============ */
-const DEF_SETTINGS={gstRate:18,returnLoss:170,adsCost:0,otherFlat:0,rtoLoss:0,lowStock:5,owner1:"Owner 1",owner2:"Owner 2",shopName:"My Store",supabaseUrl:"",supabaseKey:""};
-function blankState(){return {orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],payments:{},dashMonth:"",settings:{...DEF_SETTINGS}}}
+const DEF_SETTINGS={gstRate:18,returnLoss:0,adsCost:0,otherFlat:0,rtoLoss:0,lowStock:5,otherChg1:0,otherChg2:0,owner1:"Owner 1",owner2:"Owner 2",shopName:"My Store",supabaseUrl:"",supabaseKey:"",ver:2};
+function blankState(){return {orders:[],otherCosts:[],stock:{},skuCost:{},skuPack:{},skuOwner:{},settlements:[],returnsMap:{},fileSums:{},legacyData:false,payments:{},dashMonth:"",settings:{...DEF_SETTINGS}}}
+function isoDate(v){
+  if(v==null||v==="")return "";
+  if(v instanceof Date){return isNaN(v)?"":v.getFullYear()+"-"+String(v.getMonth()+1).padStart(2,"0")+"-"+String(v.getDate()).padStart(2,"0")}
+  if(typeof v==="number"&&v>20000&&v<80000){const p=XLSX.SSF.parse_date_code(v);if(p)return p.y+"-"+String(p.m).padStart(2,"0")+"-"+String(p.d).padStart(2,"0")}
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[1]+"-"+m[2]+"-"+m[3];
+  m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);if(m)return m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0");
+  const d=new Date(s);return isNaN(d)?"":isoDate(d);
+}
 function normalize(x){
   const s=x&&typeof x==="object"?x:{};
   const safeArr=v=>Array.isArray(v)?v.filter(r=>r&&typeof r==="object"):[];
   const safeObj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const st={...DEF_SETTINGS,...safeObj(s.settings)};
+  /* orders saved before this version were read with the old import rules (payment-file rows were treated as orders) */
+  const legacy=s.legacyData!==undefined?!!s.legacyData:(!(num(safeObj(s.settings).ver)>=2)&&safeArr(s.orders).length>0);
+  /* one-time migration: the old "₹170 guess per return" booked losses before Meesho had actually deducted anything */
+  if(!(num(safeObj(s.settings).ver)>=2)){if(num(st.returnLoss)===170)st.returnLoss=0;st.ver=2}
   return {
-    orders:safeArr(s.orders).map(o=>({subOrder:String(o.subOrder||""),order:String(o.order||""),sku:String(o.sku||""),qty:Math.max(1,num(o.qty)||1),price:num(o.price),status:String(o.status||"New"),date:o.date||"",loss:o.loss!=null?num(o.loss):undefined})),
+    orders:safeArr(s.orders).map(o=>({subOrder:String(o.subOrder||""),order:String(o.order||""),sku:String(o.sku||""),qty:Math.max(1,num(o.qty)||1),price:num(o.price),status:String(o.status||"New"),date:isoDate(o.date),loss:o.loss!=null?num(o.loss):undefined})),
     otherCosts:safeArr(s.otherCosts),
     stock:safeObj(s.stock),skuCost:safeObj(s.skuCost),skuPack:safeObj(s.skuPack),skuOwner:safeObj(s.skuOwner),
-    settlements:safeArr(s.settlements).map(t=>({subOrder:String(t.subOrder||""),amount:num(t.amount),scheduled:!!t.scheduled})),
+    settlements:safeArr(s.settlements).map(t=>({subOrder:String(t.subOrder||""),amount:num(t.amount),scheduled:!!t.scheduled,date:String(t.date||"")})),
+    returnsMap:safeObj(s.returnsMap),fileSums:safeObj(s.fileSums),legacyData:legacy,
     payments:safeObj(s.payments),
     dashMonth:typeof s.dashMonth==="string"?s.dashMonth:"",
-    settings:{...DEF_SETTINGS,...safeObj(s.settings)}
+    settings:st
   };
 }
 let S;
 try{S=normalize(JSON.parse(localStorage.getItem("meeshoPortal")||"null"));}catch(e){S=blankState();}
 function save(){localStorage.setItem("meeshoPortal",JSON.stringify(S));localStorage.setItem("meeshoPortalTs",new Date().toISOString());cloudPush();}
 function fmt(n){return "₹"+(Math.round((n||0)*100)/100).toLocaleString("en-IN")}
-function dmy(d){if(!d)return "—";const x=new Date(d);return isNaN(x)?"—":String(x.getDate()).padStart(2,"0")+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+x.getFullYear()}
-function monthKey(d){if(!d)return "";const x=new Date(d);return isNaN(x)?"":x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")}
+function dmy(d){const m=String(d||"").match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[3]+"-"+m[2]+"-"+m[1];if(!d)return "—";const x=new Date(d);return isNaN(x)?"—":String(x.getDate()).padStart(2,"0")+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+x.getFullYear()}
+function monthKey(d){const m=String(d||"").match(/^(\d{4})-(\d{2})/);if(m)return m[1]+"-"+m[2];if(!d)return "";const x=new Date(d);return isNaN(x)?"":x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")}
 function monthLabel(k){if(!k)return "";const p=k.split("-");return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+p[1]-1]+" "+p[0]}
 function num(x){const n=parseFloat(String(x==null?"":x).replace(/[₹,\s]/g,""));return isNaN(n)?0:n}
 
@@ -169,123 +184,296 @@ function render(){
 }
 
 /* ============ IMPORT ENGINE ============ */
-const ALIAS={subOrder:["sub order no","suborder no","sub order number","suborder number","sub_order_no"],order:["order no","order number","order_id","order id"],sku:["supplier sku","sku","style id","product id"],qty:["quantity","qty"],price:["supplier discounted price","sale amount","final settlement amount","item total","supplier price"],status:["order status","status","item status"],date:["order date","order date time","created at"]};
-function norm(s){return String(s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
-function findHeaderRow(rows){for(let i=0;i<Math.min(rows.length,10);i++){const cells=(rows[i]||[]).map(norm);let hits=0;for(const k in ALIAS)if(cells.some(c=>ALIAS[k].some(a=>c===a||c.includes(a))))hits++;if(hits>=2)return i}return 0}
-function mapCols(header){const h=(header||[]).map(norm),m={};for(const k in ALIAS){const i=h.findIndex(c=>ALIAS[k].some(a=>c===a||c.includes(a)));if(i>-1)m[k]=i}return m}
-function parseRows(raw,fileName){
+const ALIAS={
+  subOrder:["sub order no","suborder no","sub order number","suborder number","sub_order_no"],
+  order:["order no","order number","order id"],
+  item:["product name","item name","item"],
+  sku:["supplier sku","sku","style id","product id"],
+  qty:["quantity","qty"],
+  price:["supplier discounted price","sale amount","item total","supplier price"],
+  status:["reason for credit entry","order status","item status","status"],
+  date:["order date","order date time","created at"]
+};
+function norm(s){return String(s==null?"":s).toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
+function findHeaderRow(rows){for(let i=0;i<Math.min(rows.length,12);i++){const cells=(rows[i]||[]).map(norm);let hits=0;for(const k in ALIAS)if(cells.some(c=>ALIAS[k].some(a=>c===a||c.includes(a))))hits++;if(hits>=2)return i}return 0}
+/* exact header match wins over a "contains" match, so e.g. "Reason for Credit Entry" is preferred over any other column that merely mentions "status" */
+function mapCols(header){
+  const h=(header||[]).map(norm),m={};
+  for(const k in ALIAS){
+    let i=-1;
+    for(const a of ALIAS[k]){i=h.findIndex(c=>c===a);if(i>-1)break}
+    if(i<0)for(const a of ALIAS[k]){i=h.findIndex(c=>c.includes(a));if(i>-1)break}
+    if(i>-1)m[k]=i;
+  }
+  return m;
+}
+function mapStatus(raw){
+  const r=norm(raw);if(!r)return "New";
+  if(/cancel/.test(r))return "Cancelled";
+  if(/\brto\b|courier return/.test(r))return "RTO";
+  if(/return/.test(r))return "Customer Return";
+  if(/deliver/.test(r))return "Delivered";
+  if(/ship|transit|dispatch|ready/.test(r))return "Shipped";
+  return "New";
+}
+function sheetRows(ws){return XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true})}
+function parseOrderRows(raw,label){
   const hRow=findHeaderRow(raw),map=mapCols(raw[hRow]);
-  if(map.subOrder===undefined&&map.order===undefined)throw new Error(fileName+": could not find Sub Order No / Order No column.");
+  if(map.subOrder===undefined)throw new Error(label+": could not find the Sub Order No column.");
   let added=0,dup=0;const seen=new Set(S.orders.map(o=>o.subOrder));
   for(let i=hRow+1;i<raw.length;i++){
     const r=raw[i];if(!r||!r.length)continue;
-    const sub=map.subOrder!==undefined?String(r[map.subOrder]||"").trim():String(r[map.order]||"").trim()+"-1";
-    if(!sub||(sub==="-1"&&!r[map.order]))continue;
+    const sub=String(r[map.subOrder]==null?"":r[map.subOrder]).trim();
+    if(!sub||sub.length<5)continue;
     if(seen.has(sub)){dup++;continue}
     seen.add(sub);
-    const statusRaw=norm(map.status!==undefined?r[map.status]:"");
-    let st="New";
-    if(/cancel/.test(statusRaw))st="Cancelled";
-    else if(/\brto\b/.test(statusRaw))st="RTO";
-    else if(/return/.test(statusRaw))st="Customer Return";
-    else if(/deliver/.test(statusRaw))st="Delivered";
-    else if(/ship|transit|dispatch/.test(statusRaw))st="Shipped";
-    S.orders.push({subOrder:sub,order:map.order!==undefined?String(r[map.order]||"").trim():sub,sku:map.sku!==undefined?String(r[map.sku]||"").trim():"",qty:Math.max(1,num(map.qty!==undefined?r[map.qty]:1)||1),price:num(map.price!==undefined?r[map.price]:0),status:st,date:map.date!==undefined?(r[map.date]||""):""});
+    /* cost prices are keyed by product name (same as the Sales Manager sheet), falling back to the SKU code */
+    const name=map.item!==undefined?String(r[map.item]||"").trim():"";
+    const code=map.sku!==undefined?String(r[map.sku]||"").trim():"";
+    S.orders.push({subOrder:sub,order:map.order!==undefined?String(r[map.order]||"").trim():sub,sku:name||code,qty:Math.max(1,num(map.qty!==undefined?r[map.qty]:1)||1),price:num(map.price!==undefined?r[map.price]:0),status:mapStatus(map.status!==undefined?r[map.status]:""),date:isoDate(map.date!==undefined?r[map.date]:"")});
     added++;
   }
   return {added:added,dup:dup};
 }
+/* Completed / Intransit exports: tells us which orders are Courier Return (RTO) or Customer Return */
+function parseReturnRows(rows,sum){
+  const hr=rows.findIndex(r=>r.some(c=>norm(c)==="suborder number"||norm(c)==="sub order number"));
+  if(hr<0)return;
+  const h=rows[hr].map(norm);
+  const iSub=h.findIndex(c=>c==="suborder number"||c==="sub order number"),iTy=h.findIndex(c=>c==="type of return");
+  if(iTy<0)return;
+  for(let i=hr+1;i<rows.length;i++){
+    const r=rows[i];const sub=String(r[iSub]==null?"":r[iSub]).trim();if(!sub)continue;
+    const t=norm(r[iTy]);let ty="";
+    if(/\brto\b|courier/.test(t))ty="RTO";else if(/customer/.test(t))ty="Customer Return";
+    if(!ty)continue;
+    if(S.returnsMap[sub]!==ty){if(S.returnsMap[sub]===undefined)sum.returns++;S.returnsMap[sub]=ty}
+  }
+}
+/* One order can have several payment rows over time (sale credit on one date, a return/recovery deduction later).
+   Rows are told apart by order + payment date + amount, so re-uploading the same file never double counts,
+   while a later deduction for the same order is added on top — exactly like SUMIF in the Excel. */
+function settlementIndex(){
+  const idx={},cnt={};
+  S.settlements.forEach(t=>{
+    if(!t.scheduled){idx[t.subOrder+"|U"]=t;return}
+    const base=t.subOrder+"|"+t.date+"|"+t.amount;cnt[base]=(cnt[base]||0)+1;idx[base+"|"+cnt[base]]=t;
+  });
+  return idx;
+}
+function addSettlement(idx,occ,sub,amt,paid,date,sum){
+  amt=Math.round(amt*100)/100;
+  if(!paid){
+    const ex=idx[sub+"|U"];
+    if(ex){ex.amount=amt}else{const t={subOrder:sub,amount:amt,scheduled:false,date:""};S.settlements.push(t);idx[sub+"|U"]=t;sum.pending++}
+    return;
+  }
+  const base=sub+"|"+date+"|"+amt;const n=(occ[base]=(occ[base]||0)+1);const k=base+"|"+n;
+  if(idx[k])return;
+  const t={subOrder:sub,amount:amt,scheduled:true,date:date};S.settlements.push(t);idx[k]=t;sum.settled++;
+}
+/* an "unscheduled" (expected) amount is dropped as soon as a real payment exists for that order */
+function prunePending(){
+  const hasPaid={};S.settlements.forEach(t=>{if(t.scheduled)hasPaid[t.subOrder]=true});
+  S.settlements=S.settlements.filter(t=>t.scheduled||!hasPaid[t.subOrder]);
+}
+/* Payment file → "Order Payments" sheet only. It must never create orders (its amounts are settlements, not sale prices). */
+function parsePaymentRows(rows,sum){
+  const hr=rows.findIndex(r=>r.some(c=>norm(c)==="sub order no"));
+  if(hr<0)return;
+  const h=rows[hr].map(norm);
+  const iSub=h.indexOf("sub order no"),iAmt=h.indexOf("final settlement amount"),iSt=h.indexOf("live order status"),iDt=h.indexOf("payment date");
+  if(iAmt<0)return;
+  const idx=settlementIndex(),occ={};
+  for(let i=hr+1;i<rows.length;i++){
+    const r=rows[i];const sub=String(r[iSub]==null?"":r[iSub]).trim();
+    if(!/^\d+_\d+$/.test(sub))continue;
+    const amt=num(r[iAmt]);
+    const pd=iDt>-1?r[iDt]:"";
+    const paid=!(pd===""||/unsched/i.test(String(pd)));
+    addSettlement(idx,occ,sub,amt,paid,paid?isoDate(pd):"",sum);
+    const live=norm(iSt>-1?r[iSt]:"");
+    if(S.returnsMap[sub]===undefined){
+      if(/\brto\b/.test(live)){S.returnsMap[sub]="RTO";sum.returns++}
+      else if(/return/.test(live)){S.returnsMap[sub]="Customer Return";sum.returns++}
+    }
+  }
+  prunePending();
+}
+/* Ads / Referral / Compensation sheets: sum only the real amount column (never IDs or dates), once per file */
+function extractSum(rows,key,colNames,fileName){
+  let hr=-1,ci=-1;
+  for(let i=0;i<Math.min(rows.length,12)&&hr<0;i++){const h=(rows[i]||[]).map(norm);for(const nm of colNames){const j=h.findIndex(c=>c.includes(nm));if(j>-1){hr=i;ci=j;break}}}
+  if(hr<0)return 0;
+  let sum=0;
+  for(let i=hr+1;i<rows.length;i++){const v=rows[i][ci];if(typeof v==="number"||/^-?[\d,.]+$/.test(String(v).trim()))sum+=num(v)}
+  sum=Math.round(sum*100)/100;
+  if(!S.fileSums)S.fileSums={};
+  S.fileSums[fileName+"|"+key]=sum;
+  S.payments[key]=Math.round(Object.keys(S.fileSums).filter(k=>k.endsWith("|"+key)).reduce((a,k)=>a+S.fileSums[k],0)*100)/100;
+  return sum;
+}
+/* Import the user's own MEESHO_SALES_MANAGER.xlsx (ORDERS / ITEMS / PAYMENTS / RETURNRTO / DASHBOARD) so the app starts from exactly the same data */
+function importSalesManager(wb,sum){
+  const get=n=>wb.Sheets[wb.SheetNames.find(x=>x.toUpperCase()===n)];
+  const it=sheetRows(get("ITEMS")),dash=get("DASHBOARD")?sheetRows(get("DASHBOARD")):[];
+  const found=[];
+  it.slice(1).forEach(r=>{const ow=String(r[1]||"").trim();if(String(r[0]||"").trim()&&ow&&!found.includes(ow))found.push(ow)});
+  const o1=String((dash[9]||[])[0]||"").trim()||found[0]||"Owner 1";
+  const o2=String((dash[17]||[])[0]||"").trim()||found.find(x=>x.toLowerCase()!==o1.toLowerCase())||"Owner 2";
+  S.settings.owner1=o1;S.settings.owner2=o2;
+  const c1=num((dash[27]||[])[3]),c2=num((dash[28]||[])[3]);
+  if(c1)S.settings.otherChg1=c1;if(c2)S.settings.otherChg2=c2;
+  it.slice(1).forEach(r=>{
+    const name=String(r[0]||"").trim();if(!name)return;
+    S.skuCost[name]=num(r[2]);S.skuPack[name]=num(r[3]);
+    S.skuOwner[name]=String(r[1]||"").trim().toLowerCase()===o2.toLowerCase()?"o2":"o1";
+  });
+  const rr=sheetRows(get("RETURNRTO"));
+  rr.slice(1).forEach(r=>{
+    const sub=String(r[1]||"").trim();if(!sub)return;
+    const t=norm(r[2]);const ty=/\brto\b|courier/.test(t)?"RTO":(/customer/.test(t)?"Customer Return":"");
+    if(ty){if(S.returnsMap[sub]===undefined)sum.returns++;S.returnsMap[sub]=ty}
+  });
+  /* every PAYMENTS row is one payment (an order can have a sale credit and a later deduction) — keep them all, like the Excel's SUMIF */
+  const pays=sheetRows(get("PAYMENTS")),idx=settlementIndex(),occ={};
+  pays.slice(1).forEach(r=>{
+    const sub=String(r[1]||"").trim();if(!sub)return;
+    addSettlement(idx,occ,sub,num(r[2]),true,isoDate(r[0]),sum);
+  });
+  const paidBy={};S.settlements.forEach(t=>{if(t.scheduled)paidBy[t.subOrder]=(paidBy[t.subOrder]||0)+t.amount});
+  const od=sheetRows(get("ORDERS")),h=od[0].map(norm);
+  const col=n=>h.findIndex(c=>c===n||c.startsWith(n));
+  const iD=col("date"),iId=col("order id"),iIt=col("item"),iQ=col("qty"),iP=col("price");
+  const seen=new Set(S.orders.map(o=>o.subOrder));
+  od.slice(1).forEach(r=>{
+    const sub=String(r[iId]||"").trim();if(!sub)return;
+    if(seen.has(sub)){sum.dup++;return}
+    seen.add(sub);
+    const ret=S.returnsMap[sub];
+    const st=ret==="RTO"?"RTO":ret==="Customer Return"?"Customer Return":((paidBy[sub]||0)>0?"Delivered":"Shipped");
+    S.orders.push({subOrder:sub,order:sub,sku:String(r[iIt]||"").trim(),qty:Math.max(1,num(r[iQ])||1),price:num(r[iP]),status:st,date:isoDate(r[iD])});
+    sum.added++;
+  });
+  sum.log.push("✓ Sales Manager workbook imported (owners: "+o1+" / "+o2+")");
+}
+function ingestWorkbook(wb,fileName,sum){
+  const up=wb.SheetNames.map(n=>n.toUpperCase());
+  if(["ORDERS","ITEMS","PAYMENTS","RETURNRTO"].every(n=>up.includes(n))){importSalesManager(wb,sum);return}
+  for(const sn of wb.SheetNames){
+    const rows=sheetRows(wb.Sheets[sn]);if(!rows.length)continue;
+    const n=norm(sn);
+    if(/\bads\b/.test(n)){extractSum(rows,"ads",["total ads cost"],fileName);sum.log.push("✓ Ads sheet read");continue}
+    if(/referral/.test(n)){extractSum(rows,"referrals",["net referral amount"],fileName);sum.log.push("✓ Referral sheet read");continue}
+    if(/compens|recover/.test(n)){extractSum(rows,"compensations",["amount inc gst","amount"],fileName);sum.log.push("✓ Compensation sheet read");continue}
+    const head=rows.slice(0,12).map(r=>r.map(norm));
+    const has=t=>head.some(r=>r.some(c=>c===t||c.includes(t)));
+    if(has("final settlement amount")&&has("sub order no")){parsePaymentRows(rows,sum);continue}
+    if(has("type of return")&&(has("suborder number")||has("sub order number"))){parseReturnRows(rows,sum);continue}
+    if(has("sub order no")||has("suborder no")||has("sub order number")||has("suborder number")){
+      try{const r=parseOrderRows(rows,fileName+" ["+sn+"]");sum.added+=r.added;sum.dup+=r.dup}catch(e){sum.log.push("⚠ "+e.message)}
+    }
+  }
+}
 async function handleFiles(files){
   const box=document.getElementById("impMsg");if(!box)return;
   box.className="msg";box.style.display="block";box.textContent="Reading files…";
-  let total=0,totalDup=0;const log=[];
+  const sum={added:0,dup:0,returns:0,settled:0,pending:0,log:[]};
   for(const f of files){
     try{
-      if(/\.xlsx?$|\.xls$/.test(f.name.toLowerCase())){
-        const wb=XLSX.read(await f.arrayBuffer(),{cellDates:true});
-        for(const sn of wb.SheetNames){
-          const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:""});
-          if(!rows.length)continue;
-          const n=norm(sn);
-          try{
-            if(/ads/.test(n)){extractSum(rows,"ads");log.push("✓ Ads sheet read");continue;}
-            if(/referral/.test(n)){extractSum(rows,"referrals");log.push("✓ Referral sheet read");continue;}
-            if(/compens|recover/.test(n)){extractSum(rows,"compensations");log.push("✓ Compensation sheet read");continue;}
-            const res=parseRows(rows,f.name+" ["+sn+"]");
-            total+=res.added;totalDup+=res.dup;
-            extractPayments(rows,sn);
-          }catch(e){log.push("⚠ "+sn+": "+e.message)}
-        }
-      }else{
-        const text=await f.text();
-        const rows=text.split(/\r?\n/).filter(l=>l.trim()).map(l=>Array.from(l.matchAll(/("([^"]*)"|[^,]*)(,|$)/g)).map(m=>m[2]!==undefined?m[2]:m[1]));
-        const res=parseRows(rows,f.name);total+=res.added;totalDup+=res.dup;
-      }
-    }catch(e){log.push("❌ "+f.name+": "+e.message)}
+      const wb=/\.xlsx?$/i.test(f.name)?XLSX.read(await f.arrayBuffer(),{type:"array"}):XLSX.read(await f.text(),{type:"string",raw:true});
+      ingestWorkbook(wb,f.name,sum);
+    }catch(e){sum.log.push("❌ "+f.name+": "+e.message)}
   }
   save();
-  box.className="msg "+((total+totalDup)?"ok":"err");
-  box.textContent="Imported "+total+" new orders ("+totalDup+" duplicates skipped)."+(log.length?"\n"+log.join("\n"):"");
+  const parts=[];
+  if(sum.added)parts.push(sum.added+" new orders");
+  if(sum.returns)parts.push(sum.returns+" RTO/return tags");
+  if(sum.settled)parts.push(sum.settled+" payments received");
+  if(sum.pending)parts.push(sum.pending+" unscheduled payments");
+  box.className="msg "+((parts.length||sum.dup)?"ok":"err");
+  box.textContent=(parts.length?"Imported: "+parts.join(", ")+".":"Nothing new found in these files.")+(sum.dup?" ("+sum.dup+" duplicate orders skipped)":"")+(sum.log.length?"\n"+sum.log.join("\n"):"");
   render();
 }
-function extractPayments(rows,sheet){
-  const hr=findHeaderRow(rows),h=(rows[hr]||[]).map(norm);
-  const gi=h.findIndex(c=>/sub ?order/.test(c)),ai=h.findIndex(c=>/final settlement|net amount/.test(c));
-  if(gi<0)return;
-  for(let i=hr+1;i<rows.length;i++){
-    const r=rows[i];const sub=String(r[gi]||"").trim();if(!sub)continue;
-    const amt=num(ai>-1?r[ai]:0);
-    const ex=S.settlements.find(x=>x.subOrder===sub);
-    if(ex)ex.amount=amt;else S.settlements.push({subOrder:sub,amount:amt,scheduled:!(/unsched/.test(norm(sheet)))});
-  }
-}
-function extractSum(rows,key){const hr=findHeaderRow(rows);let sum=0;for(let i=hr+1;i<rows.length;i++){const r=rows[i]||[];for(const c of r){const v=num(c);if(v)sum+=v}}if(sum)S.payments[key]=(S.payments[key]||0)+sum}
 
 /* ============ CALC ============ */
 function skuVal(obj,sku){return (obj&&typeof obj==="object")?num(obj[sku]):0}
-function returnLossFor(o){const s=(S.settlements||[]).find(x=>x.subOrder===o.subOrder);if(s&&s.amount<0)return s.amount;return o.loss!=null?o.loss:S.settings.returnLoss}
 function ownerOf(sku){if(!S.skuOwner||typeof S.skuOwner!=="object")return "o1";return S.skuOwner[sku]==="o2"?"o2":"o1"}
 function ownerName(k){return k==="o2"?(S.settings.owner2||"Owner 2"):(S.settings.owner1||"Owner 1")}
+function r2(x){return Math.round((x||0)*100)/100}
+/* Same rules as the MEESHO_SALES_MANAGER sheet:
+   - "Delivered" = payment received > 0, "Total sale" = every order that is not an RTO / customer return
+   - profit is only booked for orders whose payment has actually arrived (cash basis)
+   - RTO: no sale, no cost, NO packaging; customer return: packaging + the deduction Meesho actually made
+   - a return with no deduction yet is not counted until the payment file arrives (unless you set an estimate in Settings) */
 function calc(selMonth){
   const st=S.settings||DEF_SETTINGS;
   if(!S.skuOwner||typeof S.skuOwner!=="object")S.skuOwner={};
-  let o=S.orders||[];
-  if(selMonth)o=o.filter(x=>monthKey(x.date)===selMonth);
-  const delivered=o.filter(x=>x.status==="Delivered");
-  const netSale=delivered.reduce((a,x)=>a+num(x.price)*num(x.qty),0);
-  const productCost=delivered.reduce((a,x)=>a+skuVal(S.skuCost,x.sku)*num(x.qty),0);
-  const packedUnits=o.filter(x=>["Delivered","RTO","Customer Return"].includes(x.status));
-  const packCost=packedUnits.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
-  const packCostDelivered=delivered.reduce((a,x)=>a+skuVal(S.skuPack,x.sku)*num(x.qty),0);
-  const packCostShared=packCost-packCostDelivered;
-  const gst=netSale*num(st.gstRate)/118;
-  const oc=(selMonth?(S.otherCosts||[]).filter(c=>monthKey(c.date)===selMonth):(S.otherCosts||[])).reduce((a,c)=>a+num(c.amount),0);
-  const other=num(st.otherFlat)+oc;
-  const ads=num(st.adsCost);
-  const rto=o.filter(x=>x.status==="RTO");
-  const returns=o.filter(x=>x.status==="Customer Return");
-  const rtoLoss=rto.length*num(st.rtoLoss);
-  const retLoss=returns.reduce((a,x)=>a+Math.abs(returnLossFor(x)),0);
-  const netProfit=netSale-productCost-packCost-gst-other-ads-rtoLoss-retLoss;
-  const owners={};
-  delivered.forEach(x=>{
-    const own=ownerOf(x.sku);
-    if(!owners[own])owners[own]={key:own,name:ownerName(own),sale:0,productCost:0,packCost:0,orders:0};
-    const w=owners[own];
-    w.sale+=num(x.price)*num(x.qty);
-    w.productCost+=skuVal(S.skuCost,x.sku)*num(x.qty);
-    w.packCost+=skuVal(S.skuPack,x.sku)*num(x.qty);
-    w.orders++;
+  const gstK=num(st.gstRate)/(100+num(st.gstRate));
+  const paidMap={},pendMap={};
+  (S.settlements||[]).forEach(t=>{if(t.scheduled)paidMap[t.subOrder]=(paidMap[t.subOrder]||0)+num(t.amount);else pendMap[t.subOrder]=num(t.amount)});
+  let all=S.orders||[];
+  if(selMonth)all=all.filter(x=>monthKey(x.date)===selMonth);
+  const rm=S.returnsMap||{};
+  const rows=[];let cancelled=0;
+  all.forEach(x=>{
+    const ret=rm[x.subOrder]||(x.status==="RTO"?"RTO":x.status==="Customer Return"?"Customer Return":"");
+    if(x.status==="Cancelled"&&!ret){cancelled++;return}
+    const qty=Math.max(1,num(x.qty)||1);
+    const paid=paidMap[x.subOrder]||0;
+    const price=ret==="RTO"?0:num(x.price)*qty;
+    const cost=ret?0:skuVal(S.skuCost,x.sku)*qty;
+    const pkg=ret==="RTO"?0:skuVal(S.skuPack,x.sku)*qty;
+    const gst=ret?0:price*gstK;
+    let retCost=0,est=false,counted=paid!==0;
+    if(ret==="Customer Return"){
+      if(paid<0)retCost=-paid;
+      else if(paid===0&&num(st.returnLoss)>0){retCost=num(st.returnLoss);est=true;counted=true}
+    }
+    let K;
+    if(ret==="RTO"){K=0;counted=false}
+    else if(ret==="Customer Return")K=-(pkg+retCost);
+    else{K=price-gst-cost-pkg;if(paid<=0)counted=false}
+    rows.push({x,ret,qty,paid,price,cost,pkg,gst,retCost,est,K,counted,hasCost:!!(S.skuCost&&num(S.skuCost[x.sku])>0)});
   });
-  const shared=other+ads+rtoLoss+retLoss+gst+packCostShared;
+  const nonRet=rows.filter(r=>!r.ret);
+  const delivered=nonRet.filter(r=>r.paid>0);
+  const rto=rows.filter(r=>r.ret==="RTO"),returns=rows.filter(r=>r.ret==="Customer Return");
+  const counted=rows.filter(r=>r.counted);
+  const sum=(a,f)=>a.reduce((t,r)=>t+f(r),0);
+  const totalSale=sum(nonRet,r=>r.price);
+  const paymentRec=sum(rows,r=>r.paid);
+  const saleCounted=sum(counted.filter(r=>!r.ret),r=>r.price);
+  const productCost=sum(counted,r=>r.cost),packCost=sum(counted,r=>r.pkg),gst=sum(counted,r=>r.gst);
+  const retLoss=sum(counted.filter(r=>r.ret==="Customer Return"),r=>r.retCost);
+  const profitBase=sum(counted,r=>r.K);
+  const oc=(selMonth?(S.otherCosts||[]).filter(c=>monthKey(c.date)===selMonth):(S.otherCosts||[])).reduce((a,c)=>a+num(c.amount),0);
+  const other=num(st.otherFlat)+oc,ads=num(st.adsCost),rtoLoss=rto.length*num(st.rtoLoss);
+  const netProfit=profitBase-other-ads-rtoLoss;
+  const pendingRows=nonRet.filter(r=>r.paid===0).map(r=>{const m=pendMap[r.x.subOrder];return {...r,expected:m!==undefined?m:r.price,isEstimate:m===undefined}});
+  const pendingValue=sum(pendingRows,r=>r.expected);
+  const anomalies=nonRet.filter(r=>r.paid<0);
+  const missingCost=[...new Set(rows.filter(r=>!r.ret&&!r.hasCost).map(r=>r.x.sku))];
+  const waitingReturns=returns.filter(r=>r.paid===0).length;
+  const owners={};
+  const ensure=k=>owners[k]||(owners[k]={key:k,name:ownerName(k),sale:0,orders:0,delivered:0,rto:0,returns:0,paid:0,profit:0});
+  rows.forEach(r=>{
+    const w=ensure(ownerOf(r.x.sku));
+    w.orders++;if(!r.ret)w.sale+=r.price;if(!r.ret&&r.paid>0)w.delivered++;
+    if(r.ret==="RTO")w.rto++;if(r.ret==="Customer Return")w.returns++;
+    w.paid+=r.paid;if(r.counted)w.profit+=r.K;
+  });
+  const sharedExtra=other+ads+rtoLoss;
   Object.keys(owners).forEach(k=>{
     const w=owners[k];
-    w.share=netSale>0?w.sale/netSale:0;
-    w.sharedCost=Math.round(w.share*shared*100)/100;
-    w.profit=w.sale-w.productCost-w.packCost-w.sharedCost;
+    w.share=totalSale>0?w.sale/totalSale:0;
+    w.sharedCost=r2(w.share*sharedExtra);
+    w.otherCharges=num(k==="o2"?st.otherChg2:st.otherChg1);
+    w.paidNet=w.paid-w.otherCharges;
+    w.profitNet=w.profit-w.sharedCost;
     w.pct=Math.round(w.share*100);
   });
-  return {netSale,productCost,packCost,packCostShared,gst,other,ads,rtoLoss,retLoss,netProfit,delivered,rto,returns,orders:o,packedUnits,ownerStats:owners};
+  return {rows,orders:rows,totalOrders:rows.length,cancelled,totalSale,paymentRec,delivered,rto,returns,saleCounted,productCost,packCost,gst,retLoss,profitBase,other,ads,rtoLoss,netProfit,pendingRows,pendingValue,anomalies,missingCost,waitingReturns,ownerStats:owners};
 }
 
 /* ============ SAFE SETTERS ============ */
@@ -306,37 +494,44 @@ function monthPicker(){
 }
 function ownerTableHTML(c){
   const list=Object.values(c.ownerStats||{});
-  if(!c.delivered.length)return '<p style="color:var(--mut)">No delivered orders in this period yet — assign owners per SKU in the Cost & owners tab, then come back.</p>';
-  return '<table><tr><th>Owner</th><th>Orders</th><th>Sale</th><th>Product Cost</th><th>Packaging</th><th>Shared Costs</th><th>Net Profit</th><th>% of Sale</th></tr>'+
-    list.map(w=>
-      "<tr><td>"+esc(w.name)+"</td><td>"+w.orders+"</td><td>"+fmt(w.sale)+"</td><td>−"+fmt(w.productCost)+"</td><td>−"+fmt(w.packCost)+"</td><td>−"+fmt(w.sharedCost)+"</td><td class='"+(w.profit>=0?'pos':'neg')+"'>"+fmt(w.profit)+"</td><td>"+w.pct+"%</td></tr>"
-    ).join("")+'</table>'+
-    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Each owner is charged product + packaging on their own delivered orders. Shared costs (GST, ads, other, returns, RTO, and packaging on RTO/return parcels) are split in proportion to each owner\u2019s share of sale — so owner profits always add up exactly to the total Net Profit above. Assign owners per SKU in the Cost & owners tab.</p>';
+  if(!list.length)return '<p style="color:var(--mut)">No orders in this period yet — assign owners per product in the Cost & owners tab.</p>';
+  return '<table><tr><th>Owner</th><th>Total sale</th><th>Orders</th><th>Delivered</th><th>RTO</th><th>Returns</th><th>Payment rec.</th><th>Other charges</th><th>Profit</th></tr>'+
+    list.map(w=>"<tr><td>"+esc(w.name)+"</td><td>"+fmt(w.sale)+"</td><td>"+w.orders+"</td><td>"+w.delivered+"</td><td>"+w.rto+"</td><td>"+w.returns+"</td><td>"+fmt(w.paidNet)+"</td><td>"+(w.otherCharges?"−"+fmt(w.otherCharges):"—")+"</td><td class='"+(w.profitNet>=0?'pos':'neg')+"'>"+fmt(w.profitNet)+"</td></tr>").join("")+'</table>'+
+    '<p style="color:var(--mut);font-size:12px;margin-top:8px">Same layout as your Excel Owner-wise block. "Payment rec." is payments received minus that owner\u2019s Other charges (set in Settings). Profit is booked only on orders whose payment has arrived; ads / other cost / RTO loss (if any) are split by share of sale.</p>';
 }
 function vDash(){
   const sel=S.dashMonth||"",c=calc(sel),st=S.settings;
-  const paid=(S.settlements||[]).filter(s=>s.scheduled).reduce((a,s)=>a+num(s.amount),0);
-  const pend=c.delivered.reduce((a,x)=>{const s=(S.settlements||[]).find(z=>z.subOrder===x.subOrder);return a+((s&&s.scheduled)?0:(s?num(s.amount):num(x.price)*num(x.qty)))},0);
-  return '<div class="card"><h2>'+esc(st.shopName||"My Store")+(sel?" — "+monthLabel(sel):"")+'</h2>'+monthPicker()+
+  const pc=n=>c.totalOrders?(Math.round(n/c.totalOrders*1000)/10)+"%":"—";
+  const att=[];
+  if(c.pendingRows.length)att.push("⏳ <b>"+c.pendingRows.length+"</b> orders are not paid yet — about <b>"+fmt(c.pendingValue)+"</b> expected. They are not in profit until the payment file arrives.");
+  if(c.waitingReturns)att.push("↩ <b>"+c.waitingReturns+"</b> customer returns have no Meesho deduction yet"+(num(st.returnLoss)>0?" — counted at your ₹"+num(st.returnLoss)+" estimate.":" — counted as ₹0 until the payment file shows it."));
+  if(c.anomalies.length)att.push("⚠ <b>"+c.anomalies.length+"</b> order(s) have a NEGATIVE payment but are not marked as return/RTO ("+c.anomalies.map(a=>esc(a.x.subOrder)+" "+fmt(a.paid)).join(", ")+"). Please check them — they are kept out of profit.");
+  if(c.missingCost.length)att.push("💰 <b>"+c.missingCost.length+"</b> product(s) have no cost price, so profit is overstated until you fill Cost & owners.");
+  const px=S.payments||{};
+  const extras=[px.ads?"Ads "+fmt(Math.abs(px.ads)):"",px.referrals?"Referral "+fmt(px.referrals):"",px.compensations?"Compensation/recovery "+fmt(px.compensations):""].filter(Boolean);
+  const legacyBox=S.legacyData?'<div class="card" style="border:1px solid #f59e0b;background:#fffbeb"><h2>Old data detected</h2><p style="font-size:13px;margin-bottom:10px">These orders were saved by the previous version, which read the payment file as if it were orders — so numbers will not match your Excel. Clear them once, then upload your files again (or your MEESHO_SALES_MANAGER.xlsx). Your cost prices, owners, stock and settings are kept.</p><button class="btn" id="clearLegacy">Clear old orders & payments</button></div>':"";
+  return legacyBox+'<div class="card"><h2>'+esc(st.shopName||"My Store")+(sel?" — "+monthLabel(sel):"")+'</h2>'+monthPicker()+
   '<div class="kpis">'+
   kpi("Net Profit",'<span class="'+(c.netProfit>=0?'pos':'neg')+'">'+fmt(c.netProfit)+'</span>')+
-  kpi("Net Sale",fmt(c.netSale))+kpi("Product Cost",fmt(c.productCost))+kpi("GST ("+st.gstRate+"%)",'<span class="neg">'+fmt(c.gst)+'</span>')+
-  kpi("Packaging",fmt(c.packCost))+kpi("Other+Ads",fmt(c.other+c.ads))+
-  kpi("Received",fmt(paid))+kpi("Pending",fmt(pend))+'</div></div>'+
+  kpi("Total Sale (not returned)",fmt(c.totalSale))+kpi("Total Orders",c.totalOrders)+
+  kpi("Delivered (payment received)",c.delivered.length)+kpi("Payment Received",fmt(c.paymentRec))+
+  kpi("Pending payment",fmt(c.pendingValue))+kpi("RTO",c.rto.length)+kpi("Customer Returns",c.returns.length)+'</div></div>'+
+  (att.length?'<div class="card"><h2>Needs your attention</h2><ul style="margin-left:18px;font-size:13px;line-height:1.7">'+att.map(a=>'<li>'+a+'</li>').join("")+'</ul></div>':"")+
   '<div class="card"><h2>Status</h2><div class="kpis">'+
-  kpi("Total Orders",c.orders.length)+kpi("Delivered",c.delivered.length)+kpi("Shipped",c.orders.filter(x=>x.status==="Shipped").length)+
-  kpi("Cancelled",c.orders.filter(x=>x.status==="Cancelled").length)+kpi("RTO",c.rto.length)+kpi("Returns",c.returns.length)+'</div></div>'+
-  '<div class="card"><h2>Profit & Loss</h2><table>'+
-  "<tr><td>Total Sale</td><td>"+fmt(c.netSale)+"</td><td>"+c.delivered.length+" delivered</td></tr>"+
-  "<tr><td>Product Cost</td><td>−"+fmt(c.productCost)+"</td><td></td></tr>"+
-  "<tr><td>Packaging cost</td><td>−"+fmt(c.packCost)+"</td><td>delivered + RTO + returns ("+c.packedUnits.length+" packed units)</td></tr>"+
-  "<tr><td>GST "+st.gstRate+"% (from sale)</td><td>−"+fmt(c.gst)+"</td><td>deducted from profit</td></tr>"+
-  "<tr><td>Other cost</td><td>−"+fmt(c.other)+"</td><td></td></tr>"+
-  "<tr><td>Ads cost</td><td>−"+fmt(c.ads)+"</td><td></td></tr>"+
-  "<tr><td>RTO loss</td><td>−"+fmt(c.rtoLoss)+"</td><td>"+c.rto.length+" orders</td></tr>"+
-  "<tr><td>Customer Return loss</td><td>−"+fmt(c.retLoss)+"</td><td>"+c.returns.length+" orders (actual from payment file where available)</td></tr>"+
-  "<tr><td><b>Net Profit</b></td><td><b class='"+(c.netProfit>=0?'pos':'neg')+"'>"+fmt(c.netProfit)+"</b></td><td>sale − all costs − GST − losses</td></tr>"+
-  '</table></div>'+
+  kpi("Delivered %",pc(c.delivered.length))+kpi("RTO %",pc(c.rto.length))+kpi("Customer return %",pc(c.returns.length))+
+  kpi("Pending orders",c.pendingRows.length)+kpi("Cancelled",c.cancelled)+'</div></div>'+
+  '<div class="card"><h2>Profit & Loss (cash basis — same as your Excel)</h2><table>'+
+  "<tr><td>Sale on paid orders</td><td>"+fmt(c.saleCounted)+"</td><td>"+c.delivered.length+" orders with payment received</td></tr>"+
+  "<tr><td>Product cost</td><td>−"+fmt(c.productCost)+"</td><td>not charged on RTO / returns</td></tr>"+
+  "<tr><td>Packaging cost</td><td>−"+fmt(c.packCost)+"</td><td>paid orders + returned parcels; <b>none on RTO</b></td></tr>"+
+  "<tr><td>GST "+st.gstRate+"% (inside sale price)</td><td>−"+fmt(c.gst)+"</td><td>on paid orders</td></tr>"+
+  "<tr><td>Customer return deductions</td><td>−"+fmt(c.retLoss)+"</td><td>actual amount Meesho deducted ("+c.returns.length+" returns)</td></tr>"+
+  "<tr><td><b>Profit</b> (Excel \u201CPROFIT\u201D)</td><td><b class='"+(c.profitBase>=0?'pos':'neg')+"'>"+fmt(c.profitBase)+"</b></td><td></td></tr>"+
+  "<tr><td>Ads cost</td><td>−"+fmt(c.ads)+"</td><td>Settings</td></tr>"+
+  "<tr><td>Other cost (flat + ledger)</td><td>−"+fmt(c.other)+"</td><td>Settings + Other cost tab</td></tr>"+
+  "<tr><td>RTO loss</td><td>−"+fmt(c.rtoLoss)+"</td><td>"+c.rto.length+" RTO orders</td></tr>"+
+  "<tr><td><b>Net Profit</b></td><td><b class='"+(c.netProfit>=0?'pos':'neg')+"'>"+fmt(c.netProfit)+"</b></td><td></td></tr>"+
+  '</table>'+(extras.length?'<p style="color:var(--mut);font-size:12px;margin-top:8px">From payment-file sheets (info only, not auto-deducted): '+extras.join(" · ")+'. Enter what you want deducted per owner under Settings → Other charges.</p>':"")+'</div>'+
   '<div class="card"><h2>Owner-wise performance</h2>'+ownerTableHTML(c)+'</div>'+
   '<div class="card"><h3>Sales & orders trend</h3><canvas id="ch1" height="140"></canvas><h3 style="margin-top:16px">Order outcomes</h3><canvas id="ch2" height="140"></canvas><h3 style="margin-top:16px">Owner-wise sale share</h3><canvas id="ch3" height="140"></canvas></div>'+
   '<div class="note">⚠ GST here is record-keeping support only — verify filings with your CA.</div>';
@@ -345,29 +540,41 @@ let ch1Ref=null,ch2Ref=null,ch3Ref=null;
 function drawCharts(){
   if(!window.Chart)return;
   if(ch1Ref){ch1Ref.destroy();ch1Ref=null}if(ch2Ref){ch2Ref.destroy();ch2Ref=null}if(ch3Ref){ch3Ref.destroy();ch3Ref=null}
-  const sel=S.dashMonth||"";
+  const sel=S.dashMonth||"";const c=calc(sel);
   const c1=document.getElementById("ch1"),c2=document.getElementById("ch2"),c3=document.getElementById("ch3");
   if(c1){
-    const byDate={};(S.orders||[]).filter(o=>o.status==="Delivered"&&(!sel||monthKey(o.date)===sel)).forEach(o=>{const k=dmy(o.date);byDate[k]=(byDate[k]||0)+num(o.price)*num(o.qty)});
-    const ks=Object.keys(byDate).slice(-14);
-    try{ch1Ref=new Chart(c1,{type:"line",data:{labels:ks,datasets:[{label:"Delivered sale ₹",data:ks.map(k=>byDate[k]),borderColor:"#7c3aed",fill:false}]},options:{plugins:{legend:{display:true}}}});}catch(e){}
+    const byDate={};c.delivered.forEach(r=>{const k=r.x.date||"";byDate[k]=(byDate[k]||0)+r.price});
+    const ks=Object.keys(byDate).sort().slice(-14);
+    try{ch1Ref=new Chart(c1,{type:"line",data:{labels:ks.map(dmy),datasets:[{label:"Sale on paid orders ₹",data:ks.map(k=>byDate[k]),borderColor:"#7c3aed",fill:false}]},options:{plugins:{legend:{display:true}}}});}catch(e){}
   }
   if(c2){
-    const cnt={};(S.orders||[]).filter(o=>!sel||monthKey(o.date)===sel).forEach(o=>{cnt[o.status]=(cnt[o.status]||0)+1});
-    try{ch2Ref=new Chart(c2,{type:"doughnut",data:{labels:Object.keys(cnt),datasets:[{data:Object.values(cnt),backgroundColor:["#7c3aed","#3b82f6","#059669","#dc2626","#d97706","#8b5cf6","#64748b"]}]},options:{plugins:{legend:{position:"bottom"}}}});}catch(e){}
+    const lab=["Delivered (paid)","Pending payment","RTO","Customer return","Cancelled"],val=[c.delivered.length,c.pendingRows.length,c.rto.length,c.returns.length,c.cancelled];
+    try{ch2Ref=new Chart(c2,{type:"doughnut",data:{labels:lab,datasets:[{data:val,backgroundColor:["#059669","#3b82f6","#d97706","#dc2626","#64748b"]}]},options:{plugins:{legend:{position:"bottom"}}}});}catch(e){}
   }
   if(c3){
-    const os=Object.values(calc(sel).ownerStats||{});
+    const os=Object.values(c.ownerStats||{});
     if(os.length)try{ch3Ref=new Chart(c3,{type:"doughnut",data:{labels:os.map(w=>w.name),datasets:[{data:os.map(w=>w.sale),backgroundColor:["#7c3aed","#f59e0b","#10b981","#3b82f6"]}]},options:{plugins:{legend:{position:"bottom"}}}});}catch(e){}
   }
 }
-function vUpload(){return '<div class="card"><h2>Upload your Meesho exports</h2>'+
- '<p style="color:var(--mut);font-size:13px;margin-bottom:12px">Orders CSV/XLSX + payment file (all sheets picked up automatically — return deductions from the payment file are used as the actual return loss). Duplicates are skipped by Sub Order No. Nothing leaves your browser except the cloud backup.</p>'+
- '<div class="drop" id="dz">📄 Drag & drop your Meesho files here<br><small style="color:var(--mut)">— or click to browse —</small><input type="file" id="fp" multiple accept=".csv,.xlsx,.xls" style="display:none"></div>'+
+function vUpload(){return '<div class="card"><h2>Upload your Meesho files</h2>'+
+ '<p style="color:var(--mut);font-size:13px;margin-bottom:12px">You can drop any of these together: <b>Orders export (CSV)</b>, <b>Completed / Intransit return exports (CSV)</b>, the <b>payment file (XLSX)</b>, or your own <b>MEESHO_SALES_MANAGER.xlsx</b>. The app recognises each file by its columns. Payment files only add settlements (received vs "unscheduled") and never create orders. Duplicates are skipped by Sub Order No; payments are updated, never double-counted.</p>'+
+ '<div class="drop" id="dz">📄 Drag & drop your files here<br><small style="color:var(--mut)">— or click to browse —</small><input type="file" id="fp" multiple accept=".csv,.xlsx,.xls" style="display:none"></div>'+
  '<div id="impMsg" class="msg"></div>'+
  '<button class="btn gray" style="margin-top:12px" id="resetBtn">Reset this business\u2019s data</button></div>'}
-function vOrders(){const rows=(S.orders||[]).map(o=>"<tr><td>"+dmy(o.date)+"</td><td>"+esc(o.subOrder)+"</td><td>"+esc(o.sku)+"</td><td>"+o.qty+"</td><td>"+fmt(num(o.price)*num(o.qty))+"</td><td>"+esc(o.status)+"</td></tr>").join("");
-  return '<div class="card"><h2>All orders ('+(S.orders||[]).length+')</h2>'+(S.orders.length?'<table><tr><th>Date</th><th>Sub Order</th><th>SKU</th><th>Qty</th><th>Sale</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No orders yet — upload in the Upload data tab.</p>")+'</div>'}
+function orderState(o,ret,paid){
+  if(ret)return ret==="RTO"?"RTO (courier return)":"Customer return";
+  if(o.status==="Cancelled")return "Cancelled";
+  if(paid>0)return "Delivered (paid)";
+  if(paid<0)return "⚠ Negative payment";
+  return o.status==="Delivered"?"Delivered — payment pending":"In progress / pending";
+}
+function vOrders(){
+  const rm=S.returnsMap||{},pm={};(S.settlements||[]).forEach(t=>{if(t.scheduled)pm[t.subOrder]=(pm[t.subOrder]||0)+num(t.amount)});
+  const rows=(S.orders||[]).map(o=>{
+    const ret=rm[o.subOrder]||(o.status==="RTO"?"RTO":o.status==="Customer Return"?"Customer Return":"");const paid=pm[o.subOrder]||0;
+    return "<tr><td>"+dmy(o.date)+"</td><td>"+esc(o.subOrder)+"</td><td>"+esc(o.sku)+"</td><td>"+o.qty+"</td><td>"+fmt(ret==="RTO"?0:num(o.price)*num(o.qty))+"</td><td class='"+(paid<0?'neg':'')+"'>"+(paid?fmt(paid):"—")+"</td><td>"+esc(orderState(o,ret,paid))+"</td></tr>";
+  }).join("");
+  return '<div class="card"><h2>All orders ('+(S.orders||[]).length+')</h2>'+(S.orders.length?'<table><tr><th>Date</th><th>Sub Order</th><th>Product</th><th>Qty</th><th>Sale</th><th>Payment</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No orders yet — upload in the Upload data tab.</p>")+'</div>'}
 function vCost(){
   const skus=[...new Set((S.orders||[]).map(o=>o.sku).filter(Boolean))];
   let rows="";
@@ -394,35 +601,36 @@ function vStock(){
   const skus=[...new Set((S.orders||[]).map(o=>o.sku).filter(Boolean))];
   let rows="";
   skus.forEach(s=>{
-    const sold=(S.orders||[]).filter(o=>o.sku===s&&o.status==="Delivered").reduce((a,o)=>a+num(o.qty),0);
+    const sold=calc("").delivered.filter(r=>r.x.sku===s).reduce((a,r)=>a+r.qty,0);
     const low=num(S.stock&&S.stock[s])<=num(S.settings.lowStock);
     rows+='<tr><td>'+esc(s)+'</td><td><input data-sku="'+esc(s)+'" class="stockIn" value="'+((S.stock&&S.stock[s]!=null)?S.stock[s]:"")+'"></td><td>'+sold+'</td><td>'+(low?'<span class="neg">⚠ Low stock</span>':"OK")+'</td></tr>';
   });
   return '<div class="card"><h2>Stock on hand</h2>'+(skus.length?'<table><tr><th>SKU</th><th>Current stock</th><th>Sold (delivered)</th><th>Status</th></tr>'+rows+'</table>':"<p style='color:var(--mut)'>No SKUs yet.</p>")+'</div>';
 }
 function vReturns(){
-  const r=(S.orders||[]).filter(o=>o.status==="Customer Return");
+  const c=calc(""),r=c.returns;
   let rows="";
-  r.forEach(o=>{
-    const s=(S.settlements||[]).find(x=>x.subOrder===o.subOrder);
-    rows+='<tr><td>'+esc(o.subOrder)+'</td><td>'+esc(o.sku)+'</td><td>'+(s&&s.amount<0?'<span class="neg">'+fmt(s.amount)+'</span>':"—")+'</td>'+
-    '<td><input data-sub="'+esc(o.subOrder)+'" class="lossIn" value="'+returnLossFor(o)+'"></td></tr>';
+  r.forEach(x=>{
+    const ded=x.paid<0?'<span class="neg">'+fmt(-x.paid)+'</span>':(x.est?'estimate '+fmt(x.retCost):'<span style="color:var(--mut)">waiting for payment file</span>');
+    rows+='<tr><td>'+esc(x.x.subOrder)+'</td><td>'+esc(x.x.sku)+'</td><td>'+ded+'</td><td>'+(x.counted?fmt(x.pkg):"—")+'</td><td>'+(x.counted?'<b class="neg">'+fmt(x.pkg+x.retCost)+'</b>':"—")+'</td></tr>';
   });
+  const tot=r.filter(x=>x.counted).reduce((a,x)=>a+x.pkg+x.retCost,0);
   return '<div class="card"><h2>Customer returns ('+r.length+')</h2>'+
-  '<p style="color:var(--mut);font-size:13px">"Actual from payment file" is the deduction Meesho made (shown negative). Profit calculation uses the absolute value so losses are always subtracted correctly.</p>'+
-  (r.length?'<table><tr><th>Sub Order</th><th>SKU</th><th>Actual from payment file</th><th>Loss applied ₹</th></tr>'+rows+
-  '<tr><td colspan="3"><b>Total return loss (deducted from profit)</b></td><td><b class="neg">'+fmt(r.reduce((a,o)=>a+Math.abs(returnLossFor(o)),0))+'</b></td></tr></table>':"<p style='color:var(--mut)'>No customer returns uploaded yet.</p>")+'</div>';
+  '<p style="color:var(--mut);font-size:13px">Loss on a return = the amount Meesho actually deducted (negative payment) + packaging. Until a payment file shows the deduction the return is not counted — exactly like your Excel. RTO orders cost nothing here (no packaging, no deduction).</p>'+
+  (r.length?'<table><tr><th>Sub Order</th><th>Product</th><th>Meesho deduction</th><th>Packaging</th><th>Loss counted</th></tr>'+rows+
+  '<tr><td colspan="4"><b>Total return loss (already inside Profit)</b></td><td><b class="neg">'+fmt(tot)+'</b></td></tr></table>':"<p style='color:var(--mut)'>No customer returns yet.</p>")+'</div>';
 }
 function vReceived(){const paid=(S.settlements||[]).filter(s=>s.scheduled);
   return '<div class="card"><h2>Received payment ('+paid.length+') — '+fmt(paid.reduce((a,s)=>a+num(s.amount),0))+'</h2>'+
-  (paid.length?'<table><tr><th>Sub Order</th><th>Settlement ₹</th></tr>'+paid.map(s=>"<tr><td>"+esc(s.subOrder)+"</td><td class='"+(s.amount<0?'neg':'')+"'>"+fmt(s.amount)+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>No settlements yet — upload the payment file.</p>")+'</div>'}
-function vPending(){const pd=(S.orders||[]).filter(o=>o.status==="Delivered"&&!(S.settlements||[]).find(s=>s.subOrder===o.subOrder&&s.scheduled));
-  return '<div class="card"><h2>Pending payment ('+pd.length+')</h2>'+
-  (pd.length?'<table><tr><th>Sub Order</th><th>Est. ₹</th></tr>'+pd.map(o=>"<tr><td>"+esc(o.subOrder)+"</td><td>"+fmt(num(o.price)*num(o.qty))+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>Nothing pending — all delivered orders have settlements.</p>")+'</div>'}
+  (paid.length?'<table><tr><th>Date</th><th>Sub Order</th><th>Settlement ₹</th></tr>'+paid.map(s=>"<tr><td>"+dmy(s.date)+"</td><td>"+esc(s.subOrder)+"</td><td class='"+(s.amount<0?'neg':'')+"'>"+fmt(s.amount)+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>No settlements yet — upload the payment file.</p>")+'</div>'}
+function vPending(){const c=calc(""),pd=c.pendingRows;
+  return '<div class="card"><h2>Pending payment ('+pd.length+') — '+fmt(c.pendingValue)+'</h2>'+
+  '<p style="color:var(--mut);font-size:13px">Orders that are not RTO / returned and have no payment yet. "Meesho figure" = the unscheduled amount from the payment file; otherwise the sale price is shown as an estimate.</p>'+
+  (pd.length?'<table><tr><th>Date</th><th>Sub Order</th><th>Product</th><th>Source</th><th>Expected ₹</th></tr>'+pd.map(r=>"<tr><td>"+dmy(r.x.date)+"</td><td>"+esc(r.x.subOrder)+"</td><td>"+esc(r.x.sku)+"</td><td>"+(r.isEstimate?"Estimate":"Meesho figure")+"</td><td>"+fmt(r.expected)+"</td></tr>").join("")+'</table>':"<p style='color:var(--mut)'>Nothing pending.</p>")+'</div>'}
 function vSettings(){const s=S.settings;
   return '<div class="card"><h2>Calculation settings</h2><div class="row">'+
   '<div><label>Shop name</label><br><input id="sn" value="'+esc(s.shopName||"")+'"><br><small style="color:var(--mut)">Editable — shows on dashboard & sidebar</small></div>'+
-  [["gstRate","GST rate %"],["returnLoss","Return default loss ₹"],["adsCost","Ads cost ₹"],["otherFlat","Other cost flat ₹"],["rtoLoss","RTO loss ₹"],["lowStock","Low stock alert"]].map(p=>'<div><label>'+p[1]+'</label><br><input type="number" value="'+num(s[p[0]])+'" data-set="'+p[0]+'"></div>').join("")+
+  [["gstRate","GST rate %"],["returnLoss","Return estimate ₹ (0 = count only real Meesho deductions, like Excel)"],["adsCost","Ads cost ₹"],["otherFlat","Other cost flat ₹"],["rtoLoss","RTO loss ₹ per RTO (Excel uses 0)"],["otherChg1","Other charges — "+esc(s.owner1)+" ₹"],["otherChg2","Other charges — "+esc(s.owner2)+" ₹"],["lowStock","Low stock alert"]].map(p=>'<div><label>'+p[1]+'</label><br><input type="number" value="'+num(s[p[0]])+'" data-set="'+p[0]+'"></div>').join("")+
   '<button class="btn" id="saveShop">Save shop name</button></div>'+
   '<h3>Cloud sync status</h3>'+cloudBadgeHTML()+
   '<button class="btn" id="pullBtn" style="margin-top:8px">⬇ Pull latest from cloud now</button>'+
@@ -466,6 +674,7 @@ document.addEventListener("change",e=>{
 });
 document.addEventListener("click",e=>{
   if(e.target.closest("#dz")&&!e.target.closest("input")){const fp=document.getElementById("fp");if(fp)fp.click();}
+  if(e.target.closest("#clearLegacy")){S.orders=[];S.settlements=[];S.returnsMap={};S.fileSums={};S.payments={};S.legacyData=false;save();render();return}
   if(e.target.closest("#resetBtn")){if(confirm("Reset ALL data for this business?")){S=blankState();save();renderNav();render();}}
   if(e.target.closest("#saveOwners")){S.settings.owner1=document.getElementById("o1").value;S.settings.owner2=document.getElementById("o2").value;save();render();}
   if(e.target.closest("#addOc")){S.otherCosts.push({date:document.getElementById("ocd").value,amount:num(document.getElementById("oca").value),note:document.getElementById("ocn").value});save();render();}
