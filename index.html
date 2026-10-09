@@ -75,8 +75,19 @@ function monthLabel(k){if(!k)return "";const p=k.split("-");return ["Jan","Feb",
 function num(x){const n=parseFloat(String(x==null?"":x).replace(/[₹,\s]/g,""));return isNaN(n)?0:n}
 
 /* ============ SUPABASE CLOUD SYNC ============ */
-function cloudCfg(){const s=S.settings||{};return {url:String(s.supabaseUrl||"").replace(/\/+$/,""),key:String(s.supabaseKey||"")}}
-function cloudReady(){const c=cloudCfg();return /^https:\/\/.+\.supabase\.co$/.test(c.url)&&c.key.length>20}
+/* Strip the usual copy-paste mistakes: invisible/zero-width characters, quotes or
+   backticks picked up from a chat message, a trailing slash, or an accidentally
+   included /rest/v1 path — so a slightly messy paste still works instead of failing. */
+function cleanText(v){return String(v||"").replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g,"").replace(/[`'"“”‘’]/g,"").trim()}
+function sanitizeSupabaseUrl(u){
+  u=cleanText(u);
+  u=u.replace(/\/rest\/v1\/?$/i,"");
+  u=u.replace(/\/+$/,"");
+  if(/^[a-z0-9-]+\.supabase\.co$/i.test(u))u="https://"+u; /* pasted without https:// */
+  return u;
+}
+function cloudCfg(){const s=S.settings||{};return {url:sanitizeSupabaseUrl(s.supabaseUrl),key:cleanText(s.supabaseKey)}}
+function cloudReady(){const c=cloudCfg();return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(c.url)&&c.key.length>20}
 let cloudPushTimer=null;
 async function describeHttpError(res){
   let body="";
@@ -461,12 +472,12 @@ document.addEventListener("click",e=>{
   if(e.target.closest("#saveShop")){S.settings.shopName=document.getElementById("sn").value;save();renderNav();render();}
   if(e.target.closest("#dlBtn"))downloadBackup();
   if(e.target.closest("#saveCloud")){
-    S.settings.supabaseUrl=document.getElementById("su").value.trim();
-    S.settings.supabaseKey=document.getElementById("sk").value.trim();
+    S.settings.supabaseUrl=sanitizeSupabaseUrl(document.getElementById("su").value);
+    S.settings.supabaseKey=cleanText(document.getElementById("sk").value);
     localStorage.setItem("meeshoPortal",JSON.stringify(S));
     if(!cloudReady()){
-      const reason=!/^https:\/\/.+\.supabase\.co$/.test(S.settings.supabaseUrl)
-        ? "⚠ URL doesn't look right — it should be exactly https://xxxx.supabase.co (no trailing slash or /rest/v1)"
+      const reason=!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(S.settings.supabaseUrl)
+        ? "⚠ URL doesn't look right. App read it as: \u201C"+S.settings.supabaseUrl+"\u201D ("+S.settings.supabaseUrl.length+" characters) — it should look like https://xxxx.supabase.co"
         : "⚠ Anon key looks too short — make sure the whole key got pasted";
       setCloudBadge(false,reason);render();
       return;
